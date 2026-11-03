@@ -47,12 +47,14 @@ cat > "$PLIST" <<EOF
 </plist>
 EOF
 
+launchctl bootout "gui/$(id -u)/$LABEL" 2>/dev/null || true
 # The launch agent deliberately abandons its service children, but an older watchdog is itself a
-# parent process and would otherwise survive a reinstall beside the new one.
+# parent process and would otherwise survive a reinstall beside the new one. Boot it out first so
+# launchd has released the job before the preserved parent is cleaned up.
 for old_pid in $(pgrep -f "^/bin/bash $ROOT/scripts/monocer-watchdog.sh$" || true); do
   kill "$old_pid" 2>/dev/null || true
 done
-launchctl bootout "gui/$(id -u)/$LABEL" 2>/dev/null || true
+sleep 1
 launchctl bootstrap "gui/$(id -u)" "$PLIST"
 launchctl enable "gui/$(id -u)/$LABEL"
 echo "MONOCER auto-start enabled: $PLIST"
