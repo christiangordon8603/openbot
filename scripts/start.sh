@@ -31,6 +31,7 @@ COMPUTER_PORT="$(setting COMPUTER_PORT 4100)"
 BOT_PORT="$(setting BOT_PORT 4200)"
 LANGGRAPH_PORT="$(setting LANGGRAPH_PORT 4201)"
 SUPERVISOR_PORT="$(setting SUPERVISOR_PORT 4500)"
+ROUTINES_PORT="$(setting ROUTINES_PORT 4400)"
 ONE_COMPUTER_EACH="${OPENBOT_ONE_COMPUTER_EACH:-true}"
 export APP_PORT SERVER_PORT
 SUPERVISOR_TOKEN="$(setting SUPERVISOR_TOKEN openbot-dev-supervisor-token)"
@@ -142,12 +143,14 @@ echo "OpenBot"
 echo "======="
 
 info "1/4  Docker services"
-SERVICES=(postgres)
+SERVICES=(postgres monocer-linux)
 if [ "$ONE_COMPUTER_EACH" = "true" ]; then
   SERVICES+=(supervisor)
 fi
 #
-# Every Bot service, every run, whether or not it is already answering.
+# The MONOCER profile uses the signed-in Claude bridge on the host. The stock Qwen-backed Bot
+# containers remain available in docker-compose for the upstream example, but are deliberately not
+# started here so a Claude-only deployment does not depend on a local model.
 #
 # This used to skip one that answered its health route, which sounds like an optimisation and is
 # actually a correctness bug: answering says the process is alive, not that its environment still
@@ -162,12 +165,12 @@ fi
 # `docker compose up -d` is declarative and does nothing for a service whose configuration has not
 # changed, so naming them all costs a comparison and buys the guarantee that what is running is what
 # this run configured.
-for svc in agent-computer agent-bot agent-langgraph; do
+for svc in agent-computer; do
   SERVICES+=("$svc")
 done
 
 export SUPERVISOR_TOKEN COMPUTER_TOKEN
-export COMPUTER_PORT BOT_PORT LANGGRAPH_PORT SUPERVISOR_PORT
+export COMPUTER_PORT BOT_PORT LANGGRAPH_PORT SUPERVISOR_PORT ROUTINES_PORT
 docker compose up -d --build "${SERVICES[@]}" >/dev/null
 if ! docker compose run --rm --build migrate >"$LOGS/migrate.log" 2>&1; then
   red "  Migrations did not apply. The database is not the schema this server expects."
@@ -175,8 +178,40 @@ if ! docker compose run --rm --build migrate >"$LOGS/migrate.log" 2>&1; then
   exit 1
 fi
 wait_for "http://localhost:$COMPUTER_PORT/health" "agent-computer"
-wait_for "http://localhost:$BOT_PORT/health" "agent-bot"
-wait_for "http://localhost:$LANGGRAPH_PORT/health" "agent-langgraph"
+wait_for "http://127.0.0.1:${MONOCER_DESKTOP_PORT:-6080}/" "monocer-linux"
+CLAUDE_BRIDGE_LOG="$LOGS/claude-bridge.log"
+CLAUDE_BRIDGE_PID="$LOGS/claude-bridge.pid"
+if ! curl -fsS --max-time 3 "http://127.0.0.1:${CLAUDE_BRIDGE_PORT:-4202}/health" >/dev/null 2>&1; then
+  (cd "$ROOT/agent-claude" && PORT="${CLAUDE_BRIDGE_PORT:-4202}" bun --env-file=../.env src/index.ts >>"$CLAUDE_BRIDGE_LOG" 2>&1 & echo $! >"$CLAUDE_BRIDGE_PID")
+fi
+wait_for "http://127.0.0.1:${CLAUDE_BRIDGE_PORT:-4202}/health" "claude-bridge"
+
+CODEX_BRIDGE_LOG="$LOGS/codex-bridge.log"
+CODEX_BRIDGE_PID="$LOGS/codex-bridge.pid"
+if ! curl -fsS --max-time 3 "http://127.0.0.1:${CODEX_BRIDGE_PORT:-4203}/health" >/dev/null 2>&1; then
+  (cd "$ROOT/agent-codex" && PORT="${CODEX_BRIDGE_PORT:-4203}" bun --env-file=../.env src/index.ts >>"$CODEX_BRIDGE_LOG" 2>&1 & echo $! >"$CODEX_BRIDGE_PID")
+fi
+wait_for "http://127.0.0.1:${CODEX_BRIDGE_PORT:-4203}/health" "codex-bridge"
+
+ROUTINES_LOG="$LOGS/routines.log"
+if ! curl -fsS --max-time 3 "http://127.0.0.1:$ROUTINES_PORT/health" >/dev/null 2>&1; then
+  (ROUTINES_PORT="$ROUTINES_PORT" ROUTINES_FILE="$ROOT/.data/monocer-routines.json" \
+    bun "$ROOT/scripts/monocer-routines.ts" >>"$ROUTINES_LOG" 2>&1 &)
+fi
+wait_for "http://127.0.0.1:$ROUTINES_PORT/health" "routines"
+
+# Serve the branded MONOCER interface from the same origin as the API. This is what makes the local
+# installation behave like one app at localhost:3001 instead of leaving the user with a separate
+# Vite development port that disappears when its shell closes.
+APP_DIST_DIR="$ROOT/app/dist"
+if [ ! -f "$APP_DIST_DIR/index.html" ]; then
+  info "  building the MONOCER interface for the server"
+  if ! bun --cwd app build >"$LOGS/app-build.log" 2>&1; then
+    red "  The MONOCER interface did not build."
+    red "  Log: $LOGS/app-build.log"
+    exit 1
+  fi
+fi
 
 for table in agent_profiles agent_preferences; do
   if ! docker compose exec -T postgres \
@@ -216,13 +251,13 @@ if [ "$SECRETS_ROTATED" = "true" ]; then
 fi
 if ! curl -fsS --max-time 3 "http://localhost:$SERVER_PORT/api/capabilities" >/dev/null 2>&1; then
   if [ "$ONE_COMPUTER_EACH" = "true" ]; then
-    (cd server && PORT="$SERVER_PORT" \
+    (cd server && PORT="$SERVER_PORT" APP_DIST_DIR="../app/dist" \
       COMPUTER_SUPERVISOR_URL="http://localhost:$SUPERVISOR_PORT" \
       SUPERVISOR_TOKEN="$SUPERVISOR_TOKEN" \
       COMPUTER_TOKEN="$COMPUTER_TOKEN" \
       bun --env-file=../.env src/index.ts >"$LOGS/server.log" 2>&1 &)
   else
-    (cd server && PORT="$SERVER_PORT" bun --env-file=../.env src/index.ts >"$LOGS/server.log" 2>&1 &)
+    (cd server && PORT="$SERVER_PORT" APP_DIST_DIR="../app/dist" bun --env-file=../.env src/index.ts >"$LOGS/server.log" 2>&1 &)
   fi
 fi
 wait_for "http://localhost:$SERVER_PORT/api/capabilities" "server"

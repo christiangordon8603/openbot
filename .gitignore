@@ -15,9 +15,13 @@ node_modules/
 **/dist/
 app/src/lib/generated/application-config.ts
 .logs/
+.data/
 .demo-logs/
 **/.impeccable
 .wave-state.md
 
 # TanStack Router scratch output
 app/.tanstack/
+
+# Added by CopilotKit CLI: browser snapshots a coding agent writes.
+.playwright-mcp/

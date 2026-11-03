@@ -1,4 +1,30 @@
 services:
+  # Persistent Linux workstation for MONOCER. This is intentionally loopback-only: the desktop is
+  # reachable from the Mac and from the local agent stack, but is not exposed to the public internet.
+  # The profile and workspace volumes preserve browser sessions, installed user applications, and
+  # agent files across container restarts.
+  monocer-linux:
+    image: lscr.io/linuxserver/webtop:ubuntu-xfce
+    ports:
+      - "127.0.0.1:${MONOCER_DESKTOP_PORT:-6080}:3000"
+    environment:
+      PUID: ${MONOCER_DESKTOP_PUID:-1000}
+      PGID: ${MONOCER_DESKTOP_PGID:-1000}
+      TZ: ${TZ:-America/New_York}
+      CUSTOM_USER: ${MONOCER_DESKTOP_USER:-monocer}
+      PASSWORD: ${MONOCER_DESKTOP_PASSWORD:?MONOCER_DESKTOP_PASSWORD must be set}
+      TITLE: MONOCER Linux Computer
+    volumes:
+      - monocer-linux-config:/config
+      - monocer-linux-workspace:/workspace
+    shm_size: "2gb"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS -u '${MONOCER_DESKTOP_USER:-monocer}:${MONOCER_DESKTOP_PASSWORD}' http://localhost:3000/ >/dev/null || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+
   postgres:
     image: pgvector/pgvector:pg17
     environment:
@@ -171,13 +197,15 @@ services:
       # host: the server calls it over localhost, and other containers use the compose network.
       - "127.0.0.1:${BOT_PORT:-4200}:4200"
     environment:
-      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       # Server sends this on every call to the managed Bot. It refuses to start without it.
       MANAGED_AGENT_TOKEN: ${MANAGED_AGENT_TOKEN:-}
       # Unset means OpenAI. Set, it is any endpoint speaking the same API, and BOT_MODEL is sent
       # to it verbatim.
-      OPENAI_BASE_URL: ${OPENAI_BASE_URL:-}
+      OPENAI_BASE_URL: ${AGENT_BOT_OPENAI_BASE_URL:-http://host.docker.internal:11434/v1}
       BOT_MODEL: ${BOT_MODEL:-gpt-5.5}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     healthcheck:
       test: ["CMD-SHELL", "bun -e \"await fetch('http://localhost:4200/health')\""]
       interval: 10s
@@ -199,7 +227,7 @@ services:
       # Same server-to-Bot request boundary as agent-bot above.
       MANAGED_AGENT_TOKEN: ${MANAGED_AGENT_TOKEN:-}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
-      OPENAI_BASE_URL: ${OPENAI_BASE_URL:-}
+      OPENAI_BASE_URL: ${AGENT_LANGGRAPH_OPENAI_BASE_URL:-http://host.docker.internal:11434/v1}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       ANTHROPIC_BASE_URL: ${ANTHROPIC_BASE_URL:-}
       GOOGLE_API_KEY: ${GOOGLE_API_KEY:-}
@@ -219,6 +247,8 @@ services:
       retries: 5
 
 volumes:
+  monocer-linux-config:
+  monocer-linux-workspace:
   postgres-data:
   agent-workspace:
   spire-server-data:

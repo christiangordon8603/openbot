@@ -1,0 +1,259 @@
+import type { BaseEvent, RunAgentInput } from "@ag-ui/core";
+import { EventEncoder } from "@ag-ui/encoder";
+import { hasManagedAgentToken } from "../../shared/agent-authorisation";
+
+const PORT = Number.parseInt(process.env.PORT ?? "4203", 10);
+const MANAGED_AGENT_TOKEN = process.env.MANAGED_AGENT_TOKEN?.trim();
+const CODEX_MODEL = process.env.CODEX_MODEL?.trim() || undefined;
+const WORKDIR = process.env.CODEX_WORKDIR?.trim() || process.cwd();
+if (!MANAGED_AGENT_TOKEN) throw new Error("MANAGED_AGENT_TOKEN is required");
+
+type RpcMessage = {
+  id?: number | string;
+  method?: string;
+  result?: { thread?: { id?: string }; turn?: { status?: string } };
+  error?: { message?: string };
+  params?: Record<string, unknown>;
+};
+
+type DelegatedToolCall = {
+  id: string;
+  name: string;
+  arguments: unknown;
+};
+
+class ToolCallDelegated extends Error {
+  readonly call: DelegatedToolCall;
+
+  constructor(call: DelegatedToolCall) {
+    super("Tool call delegated to the MONOCER surface.");
+    this.call = call;
+  }
+}
+
+function transcript(input: RunAgentInput) {
+  return input.messages
+    .map((message) => `${message.role.toUpperCase()}: ${String(message.content ?? "")}`)
+    .join("\n\n");
+}
+
+function sendRpc(stdin: Bun.FileSink, message: unknown) {
+  return stdin.write(`${JSON.stringify(message)}\n`);
+}
+
+async function runCodex(
+  prompt: string,
+  inputTools: Array<{
+    type: "function";
+    name: string;
+    description: string;
+    inputSchema: unknown;
+  }>,
+  onDelta: (delta: string) => void,
+) {
+  const child = Bun.spawn(["codex", "app-server", "--stdio"], {
+    cwd: WORKDIR,
+    stdin: "pipe",
+    stdout: "pipe",
+    stderr: "pipe",
+  });
+  const writer = child.stdin;
+  const reader = child.stdout.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let threadId = "";
+  let requestId = 1;
+  let completed = false;
+  let finalError: string | undefined;
+
+  const waitFor = async (id: number) => {
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split("\n");
+      buffer = lines.pop() ?? "";
+      for (const line of lines) {
+        if (!line.trim()) continue;
+        let message: RpcMessage;
+        try {
+          message = JSON.parse(line) as RpcMessage;
+        } catch {
+          continue;
+        }
+        if (message.method === "item/agentMessage/delta") {
+          const delta = String(message.params?.delta ?? "");
+          if (delta) onDelta(delta);
+        }
+        if (message.method === "item/tool/call") {
+          const params = message.params ?? {};
+          const callId = String(params.callId ?? "");
+          const name = String(params.tool ?? "");
+          if (callId && name) {
+            // The MONOCER surface owns client-provided tools such as computer_* actions. The
+            // app-server request must still be answered so Codex can release the turn; the actual
+            // AG-UI tool call is emitted below and the surface starts the continuation run with the
+            // tool result.
+            if (message.id !== undefined) {
+              await sendRpc(writer, {
+                id: message.id,
+                result: {
+                  success: false,
+                  contentItems: [
+                    {
+                      type: "inputText",
+                      text: "The MONOCER surface will execute this tool call. End this turn now.",
+                    },
+                  ],
+                },
+              });
+            }
+            throw new ToolCallDelegated({
+              id: callId,
+              name,
+              arguments: params.arguments ?? {},
+            });
+          }
+        }
+        if (message.method === "turn/completed") {
+          completed = true;
+          const status = (message.params?.turn as { status?: string } | undefined)?.status;
+          if (status && status !== "completed") finalError = `Codex turn ended with status: ${status}`;
+          if (id === -1) return message;
+        }
+        if (message.id === id) return message;
+        if (message.error) finalError = message.error.message ?? "Codex app-server error";
+      }
+    }
+    return undefined;
+  };
+
+  try {
+    const initializeId = requestId++;
+    await sendRpc(writer, {
+      method: "initialize",
+      id: initializeId,
+      params: {
+        clientInfo: { name: "monocer-openbot", version: "0.1.0" },
+        capabilities: { experimentalApi: true },
+      },
+    });
+    const initialized = await waitFor(initializeId);
+    if (!initialized?.result) throw new Error(initialized?.error?.message ?? "Codex initialization failed");
+    await sendRpc(writer, { method: "initialized", params: {} });
+
+    const threadRequestId = requestId++;
+    await sendRpc(writer, {
+      method: "thread/start",
+      id: threadRequestId,
+      params: {
+        cwd: WORKDIR,
+        model: CODEX_MODEL,
+        approvalPolicy: "never",
+        sandbox: "read-only",
+        ephemeral: true,
+        dynamicTools: inputTools,
+        baseInstructions: "You are the Codex-powered MONOCER agency assistant. Be practical, concise, and honest about what you can do. Do not claim browser or computer actions unless you have actually completed them.",
+      },
+    });
+    const threadResponse = await waitFor(threadRequestId);
+    threadId = String(threadResponse?.result?.thread?.id ?? "");
+    if (!threadId) throw new Error(threadResponse?.error?.message ?? "Codex did not create a thread");
+
+    const turnRequestId = requestId++;
+    await sendRpc(writer, {
+      method: "turn/start",
+      id: turnRequestId,
+      params: {
+        threadId,
+        input: [{ type: "text", text: prompt }],
+        approvalPolicy: "never",
+        sandboxPolicy: { type: "readOnly", networkAccess: false },
+      },
+    });
+    const turnResponse = await waitFor(turnRequestId);
+    if (turnResponse?.error) throw new Error(turnResponse.error.message ?? "Codex turn failed");
+    while (!completed && !finalError) {
+      await waitFor(-1);
+    }
+    if (finalError) throw new Error(finalError);
+  } finally {
+    try { writer.end(); } catch {}
+    child.kill();
+    await child.exited;
+  }
+}
+
+async function runAgent(input: RunAgentInput): Promise<Response> {
+  const encoder = new EventEncoder();
+  const stream = new ReadableStream<Uint8Array>({
+    async start(controller) {
+      const utf8 = new TextEncoder();
+      const send = (event: BaseEvent) => controller.enqueue(utf8.encode(encoder.encodeSSE(event)));
+      const messageId = `msg_${input.runId}`;
+      let textStarted = false;
+      send({ type: "RUN_STARTED", threadId: input.threadId, runId: input.runId } as BaseEvent);
+      try {
+        const prompt = [
+          "You are the Codex-powered MONOCER agency assistant.",
+          "Use the conversation below as the user's current request and context.",
+          transcript(input),
+        ].join("\n\n");
+        await runCodex(prompt, input.tools.map((tool) => ({
+          type: "function" as const,
+          name: tool.name,
+          description: tool.description,
+          inputSchema: tool.parameters,
+        })), (delta) => {
+          if (!textStarted) {
+            send({ type: "TEXT_MESSAGE_START", messageId, role: "assistant" } as BaseEvent);
+            textStarted = true;
+          }
+          send({ type: "TEXT_MESSAGE_CONTENT", messageId, delta } as BaseEvent);
+        });
+        if (textStarted) send({ type: "TEXT_MESSAGE_END", messageId } as BaseEvent);
+        send({ type: "RUN_FINISHED", threadId: input.threadId, runId: input.runId } as BaseEvent);
+      } catch (error) {
+        if (error instanceof ToolCallDelegated) {
+          if (textStarted) send({ type: "TEXT_MESSAGE_END", messageId } as BaseEvent);
+          send({
+            type: "TOOL_CALL_START",
+            toolCallId: error.call.id,
+            toolCallName: error.call.name,
+            parentMessageId: messageId,
+          } as BaseEvent);
+          send({
+            type: "TOOL_CALL_ARGS",
+            toolCallId: error.call.id,
+            delta: JSON.stringify(error.call.arguments ?? {}),
+          } as BaseEvent);
+          send({ type: "TOOL_CALL_END", toolCallId: error.call.id } as BaseEvent);
+          send({ type: "RUN_FINISHED", threadId: input.threadId, runId: input.runId } as BaseEvent);
+          return;
+        }
+        if (textStarted) send({ type: "TEXT_MESSAGE_END", messageId } as BaseEvent);
+        send({ type: "RUN_ERROR", message: error instanceof Error ? error.message : "Codex could not answer." } as BaseEvent);
+      } finally {
+        controller.close();
+      }
+    },
+  });
+  return new Response(stream, {
+    headers: { "content-type": encoder.getContentType(), "cache-control": "no-cache", connection: "keep-alive" },
+  });
+}
+
+Bun.serve({
+  port: PORT,
+  async fetch(request) {
+    const url = new URL(request.url);
+    if (url.pathname === "/health") return Response.json({ status: "ok", model: CODEX_MODEL ?? "configured", auth: "codex-chatgpt" });
+    if (url.pathname === "/ag-ui" && request.method === "POST") {
+      if (!hasManagedAgentToken(request, MANAGED_AGENT_TOKEN)) return Response.json({ error: "Unauthorized." }, { status: 401 });
+      return runAgent((await request.json()) as RunAgentInput);
+    }
+    return Response.json({ error: "Not found." }, { status: 404 });
+  },
+});
+
+console.info(`Codex AG-UI bridge listening on http://127.0.0.1:${PORT}/ag-ui`);

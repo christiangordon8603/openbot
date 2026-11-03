@@ -1,6 +1,8 @@
 import {
+  IconArrowRight,
   IconBolt,
   IconBox,
+  IconClock,
   IconLogout,
   IconPlus,
   IconSearch,
@@ -287,6 +289,44 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
                 <IconBox />
               </div>
               <span className="text-sm trackint-tight">Skills</span>
+            </SidebarMenuButton>
+          </SidebarMenuItem>
+          <SidebarMenuItem>
+            <SidebarMenuButton
+              className="hover:bg-foreground/5 h-10"
+              render={(props) => (
+                <Link
+                  {...props}
+                  to="/handoffs"
+                  activeProps={{
+                    className: "bg-foreground/5",
+                  }}
+                />
+              )}
+            >
+              <div className="size-[28px] flex items-center justify-center">
+                <IconArrowRight />
+              </div>
+              <span className="text-sm trackint-tight">Handoffs</span>
+            </SidebarMenuButton>
+          </SidebarMenuItem>
+          <SidebarMenuItem>
+            <SidebarMenuButton
+              className="hover:bg-foreground/5 h-10"
+              render={(props) => (
+                <Link
+                  {...props}
+                  to="/routines"
+                  activeProps={{
+                    className: "bg-foreground/5",
+                  }}
+                />
+              )}
+            >
+              <div className="size-[28px] flex items-center justify-center">
+                <IconClock />
+              </div>
+              <span className="text-sm trackint-tight">Routines</span>
             </SidebarMenuButton>
           </SidebarMenuItem>
           <SidebarMenuItem>

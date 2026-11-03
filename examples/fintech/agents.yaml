@@ -1,19 +1,74 @@
 # An example tenant package. Every Bot here is reachable the moment the deployment starts, so the
 # surface never registers an endpoint that is unavailable by default.
 agents:
+  # MONOCER's seven operating lanes. They all use the signed-in Claude bridge, while OpenBot
+  # supplies the computer, files, policy and audit boundary around each run.
+  - id: strategy
+    name: Strategy
+    title: Strategy & Growth
+    role_description: Turn business problems into clear briefs, positioning, priorities, and growth decisions.
+    avatar_seed: strategy
+    type: remote-ag-ui
+    endpoint: ${OPENBOT_AGENT_BOT_URL:-http://127.0.0.1:4203/ag-ui}
+  - id: creative
+    name: Creative
+    title: Creative Direction
+    role_description: Develop distinctive concepts, campaign systems, copy, and visual direction for MONOCER.
+    avatar_seed: creative
+    type: remote-ag-ui
+    endpoint: ${OPENBOT_AGENT_BOT_URL:-http://127.0.0.1:4203/ag-ui}
+  - id: production
+    name: Production
+    title: Production & Delivery
+    role_description: Turn approved ideas into practical scopes, schedules, shot lists, vendors, and delivery plans.
+    avatar_seed: production
+    type: remote-ag-ui
+    endpoint: ${OPENBOT_AGENT_BOT_URL:-http://127.0.0.1:4203/ag-ui}
+  - id: research
+    name: Research
+    title: Market Intelligence
+    role_description: Find current evidence, competitors, cultural signals, and source-backed opportunities.
+    avatar_seed: research
+    type: remote-ag-ui
+    endpoint: ${OPENBOT_AGENT_BOT_URL:-http://127.0.0.1:4203/ag-ui}
+  - id: accounts
+    name: Accounts
+    title: Client Operations
+    role_description: Organize client context, status, decisions, follow-ups, and next actions.
+    avatar_seed: accounts
+    type: remote-ag-ui
+    endpoint: ${OPENBOT_AGENT_BOT_URL:-http://127.0.0.1:4203/ag-ui}
+  - id: operations
+    name: Operations
+    title: Agency Operations
+    role_description: Run routines, quality checks, systems, documentation, and the operating rhythm of the agency.
+    avatar_seed: operations
+    type: remote-ag-ui
+    endpoint: ${OPENBOT_AGENT_BOT_URL:-http://127.0.0.1:4203/ag-ui}
+  - id: studio
+    name: Studio
+    title: Experiments & Tools
+    role_description: Prototype new workflows, tools, automations, and technical systems for MONOCER.
+    avatar_seed: studio
+    type: remote-ag-ui
+    endpoint: ${OPENBOT_AGENT_BOT_URL:-http://127.0.0.1:4203/ag-ui}
+
+  # Compatibility agents retained so existing channels and saved links continue to work.
   - id: general-assistant
     name: General Assistant
     title: Everyday Work
     role_description: Help with everyday work using clear, concise, and accurate answers.
     avatar_seed: general-assistant
-    type: built-in
-    system_prompt: You are a helpful general assistant. Give clear, concise, and accurate answers.
+    type: remote-ag-ui
+    # The local model-backed Bot speaks AG-UI and receives the governed browser tools from OpenBot.
+    endpoint: ${OPENBOT_AGENT_BOT_URL:-http://127.0.0.1:4203/ag-ui}
   - id: knowledge
     name: Knowledge
     title: Company Knowledge
     role_description: Help answer company knowledge questions and cite sources when available.
     avatar_seed: knowledge
-    type: built-in
+    type: remote-ag-ui
+    endpoint: ${OPENBOT_AGENT_BOT_URL:-http://127.0.0.1:4203/ag-ui}
     # The tools decide what is connected, not this prompt.
     #
     # This used to end "When none is connected, say so plainly", written when nothing was: the
