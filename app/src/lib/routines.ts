@@ -13,6 +13,7 @@ export type Routine = {
   createdAt: string;
   updatedAt: string;
   lastRunAt?: string;
+  memory?: Array<{ role: "user" | "assistant"; content: string }>;
 };
 
 export type RoutineRun = {

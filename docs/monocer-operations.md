@@ -74,7 +74,10 @@ The startup script also launches the local routine service at `http://127.0.0.1:
 stored in `.data/monocer-routines.json`, run through the same authenticated Codex bridge, and keep
 the latest 500 run records. The service accepts `GET /routines`, `POST /routines`, `POST
 /routines/:id` for an immediate run, `PATCH /routines/:id`, `DELETE /routines/:id`, and `GET
-/routines/:id/runs`. It is loopback-only and is intended to be managed by the MONOCER interface.
+/routines/:id/runs`. Each routine keeps a bounded, tool-free summary of its last few turns, so a
+later scheduled run can continue the work without persisting browser payloads or secrets. A routine
+already running rejects a second manual trigger. It is loopback-only and is intended to be managed
+by the MONOCER interface.
 
 Agent handoffs use the same service at `GET /handoffs`, `POST /handoffs`, and
 `GET /handoffs/:id`; the MONOCER interface exposes them at `/handoffs`. To make the local stack

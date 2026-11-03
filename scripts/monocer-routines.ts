@@ -55,6 +55,7 @@ const agentToken = process.env.MANAGED_AGENT_TOKEN?.trim();
 const serverEndpoint = process.env.OPENBOT_SERVER_URL?.trim() ?? "http://127.0.0.1:3001";
 const tickMs = 15_000;
 let writeQueue = Promise.resolve();
+const activeRoutines = new Set<string>();
 
 const backgroundTools = [
   { type: "function", name: "computer_navigate", description: "Open a web page on the assigned MONOCER computer. Returns its title and readable text.", parameters: { type: "object", properties: { url: { type: "string", description: "Full web address, including https://" } }, required: ["url"], additionalProperties: false } },
@@ -254,25 +255,32 @@ async function runHandoff(handoff: Handoff) {
 }
 
 async function runRoutine(routine: Routine) {
-  const store = await readStore();
-  const run: RoutineRun = {
-    id: `run_${crypto.randomUUID()}`,
-    routineId: routine.id,
-    status: "running",
-    startedAt: now(),
-  };
-  store.runs.push(run);
-  const storedRoutine = store.routines.find((item) => item.id === routine.id);
-  if (storedRoutine) storedRoutine.lastRunAt = run.startedAt;
-  await saveStore(store);
-  await invoke(routine, run);
-  const finished = await readStore();
-  const savedRun = finished.runs.find((item) => item.id === run.id);
-  if (savedRun) Object.assign(savedRun, run);
-  const savedRoutine = finished.routines.find((item) => item.id === routine.id);
-  if (savedRoutine && routine.memory) savedRoutine.memory = routine.memory;
-  await saveStore(finished);
-  console.info(JSON.stringify({ type: "routine-run", routineId: routine.id, runId: run.id, status: run.status }));
+  if (activeRoutines.has(routine.id)) return false;
+  activeRoutines.add(routine.id);
+  try {
+    const store = await readStore();
+    const run: RoutineRun = {
+      id: `run_${crypto.randomUUID()}`,
+      routineId: routine.id,
+      status: "running",
+      startedAt: now(),
+    };
+    store.runs.push(run);
+    const storedRoutine = store.routines.find((item) => item.id === routine.id);
+    if (storedRoutine) storedRoutine.lastRunAt = run.startedAt;
+    await saveStore(store);
+    await invoke(routine, run);
+    const finished = await readStore();
+    const savedRun = finished.runs.find((item) => item.id === run.id);
+    if (savedRun) Object.assign(savedRun, run);
+    const savedRoutine = finished.routines.find((item) => item.id === routine.id);
+    if (savedRoutine && routine.memory) savedRoutine.memory = routine.memory;
+    await saveStore(finished);
+    console.info(JSON.stringify({ type: "routine-run", routineId: routine.id, runId: run.id, status: run.status }));
+    return true;
+  } finally {
+    activeRoutines.delete(routine.id);
+  }
 }
 
 let ticking = false;
@@ -348,6 +356,7 @@ const server = Bun.serve({
     if (!routine) return json({ error: "Routine not found." }, 404);
     if (url.pathname.endsWith("/runs") && request.method === "GET") return json({ runs: store.runs.filter((run) => run.routineId === id) });
     if (request.method === "POST") {
+      if (activeRoutines.has(id)) return json({ accepted: false, routineId: id, reason: "already_running" }, 409);
       void runRoutine(routine);
       return json({ accepted: true, routineId: id }, 202);
     }
