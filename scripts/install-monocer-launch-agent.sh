@@ -13,13 +13,10 @@ cat > "$PLIST" <<EOF
 <dict>
   <key>Label</key>
   <string>$LABEL</string>
-  <key>WorkingDirectory</key>
-  <string>$ROOT</string>
   <key>ProgramArguments</key>
   <array>
-    <string>/bin/zsh</string>
-    <string>-lc</string>
-    <string>exec "$ROOT/scripts/start.sh"</string>
+    <string>/bin/bash</string>
+    <string>$ROOT/scripts/start.sh</string>
   </array>
   <key>EnvironmentVariables</key>
   <dict>

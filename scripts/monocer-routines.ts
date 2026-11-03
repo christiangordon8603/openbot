@@ -47,8 +47,65 @@ const port = Number.parseInt(process.env.ROUTINES_PORT ?? "4400", 10);
 const filePath = process.env.ROUTINES_FILE ?? `${process.cwd()}/.data/monocer-routines.json`;
 const agentEndpoint = process.env.MANAGED_AGENT_AG_UI_URL?.trim();
 const agentToken = process.env.MANAGED_AGENT_TOKEN?.trim();
+const serverEndpoint = process.env.OPENBOT_SERVER_URL?.trim() ?? "http://127.0.0.1:3001";
 const tickMs = 15_000;
 let writeQueue = Promise.resolve();
+
+const backgroundTools = [
+  { type: "function", name: "computer_navigate", description: "Open a web page on the assigned MONOCER computer. Returns its title and readable text.", parameters: { type: "object", properties: { url: { type: "string", description: "Full web address, including https://" } }, required: ["url"], additionalProperties: false } },
+  { type: "function", name: "computer_read", description: "Read the page currently open on the assigned MONOCER computer.", parameters: { type: "object", properties: {}, additionalProperties: false } },
+  { type: "function", name: "computer_snapshot", description: "List actionable controls on the current page, including refs and snapshotId.", parameters: { type: "object", properties: {}, additionalProperties: false } },
+  { type: "function", name: "computer_click", description: "Click a control using its ref and snapshotId from the latest snapshot.", parameters: { type: "object", properties: { ref: { type: "string" }, snapshotId: { type: "number" } }, required: ["ref", "snapshotId"], additionalProperties: false } },
+  { type: "function", name: "computer_type", description: "Type into a control using its ref and snapshotId from the latest snapshot.", parameters: { type: "object", properties: { ref: { type: "string" }, snapshotId: { type: "number" }, text: { type: "string" }, submit: { type: "boolean" } }, required: ["ref", "snapshotId", "text"], additionalProperties: false } },
+  { type: "function", name: "computer_key", description: "Press a key on the assigned MONOCER computer.", parameters: { type: "object", properties: { key: { type: "string" }, ref: { type: "string" }, snapshotId: { type: "number" } }, required: ["key"], additionalProperties: false } },
+  { type: "function", name: "computer_scroll", description: "Scroll the assigned MONOCER computer vertically.", parameters: { type: "object", properties: { deltaY: { type: "number" } }, additionalProperties: false } },
+] as const;
+
+type BackgroundMessage = { role: "user" | "assistant" | "tool"; content: string; toolCallId?: string; toolCalls?: Array<{ id: string; type: "function"; function: { name: string; arguments: string } }> };
+type BackgroundToolCall = { id: string; name: string; arguments: Record<string, unknown> };
+
+async function runComputerTool(agentId: string, call: BackgroundToolCall) {
+  const routes: Record<string, { method: string; path: string }> = {
+    computer_navigate: { method: "POST", path: "/navigate" }, computer_read: { method: "GET", path: "/read" }, computer_snapshot: { method: "POST", path: "/snapshot" }, computer_click: { method: "POST", path: "/click" }, computer_type: { method: "POST", path: "/type" }, computer_key: { method: "POST", path: "/key" }, computer_scroll: { method: "POST", path: "/scroll" },
+  };
+  const route = routes[call.name];
+  if (!route) return { ok: false, error: `Unsupported background tool: ${call.name}` };
+  const response = await fetch(`${serverEndpoint}/api/computers/${encodeURIComponent(agentId)}${route.path}`, { method: route.method, headers: { "content-type": "application/json" }, ...(route.method === "GET" ? {} : { body: JSON.stringify(call.arguments) }), signal: AbortSignal.timeout(120_000) });
+  const body = await response.text();
+  let parsed: unknown = body;
+  try { parsed = JSON.parse(body); } catch {}
+  return response.ok ? parsed : { ok: false, status: response.status, result: parsed };
+}
+
+async function invokeAgent(agentId: string, threadId: string, runId: string, messages: BackgroundMessage[]) {
+  if (!agentEndpoint || !agentToken) throw new Error("The Codex bridge is not configured.");
+  let history = [...messages];
+  for (let step = 0; step < 8; step += 1) {
+    const response = await fetch(agentEndpoint, { method: "POST", headers: { "content-type": "application/json", "x-openbot-agent-token": agentToken }, body: JSON.stringify({ threadId, runId: `${runId}:${step}`, messages: history, tools: backgroundTools, forwardedProps: { openbotBotId: agentId, openbotBackgroundRunId: runId } }), signal: AbortSignal.timeout(10 * 60_000) });
+    if (!response.ok) throw new Error(`Codex bridge returned ${response.status}.`);
+    const body = await response.text();
+    const output: string[] = [];
+    const calls = new Map<string, BackgroundToolCall>();
+    for (const line of body.split("\n")) {
+      if (!line.startsWith("data: ")) continue;
+      let event: { type?: string; delta?: string; message?: string; toolCallId?: string; toolCallName?: string };
+      try { event = JSON.parse(line.slice(6)) as typeof event; } catch { continue; }
+      if (event.type === "TEXT_MESSAGE_CONTENT" && typeof event.delta === "string") output.push(event.delta);
+      if (event.type === "RUN_ERROR") throw new Error(event.message ?? "The background run failed.");
+      if (event.type === "TOOL_CALL_START" && event.toolCallId && event.toolCallName) calls.set(event.toolCallId, { id: event.toolCallId, name: event.toolCallName, arguments: {} });
+      if (event.type === "TOOL_CALL_ARGS" && event.toolCallId) {
+        const call = calls.get(event.toolCallId);
+        if (call && typeof event.delta === "string") {
+          try { call.arguments = JSON.parse(event.delta) as Record<string, unknown>; } catch { throw new Error(`Codex sent invalid arguments for ${call.name}.`); }
+        }
+      }
+    }
+    if (calls.size === 0) return output.join("").trim();
+    const callMessages = [...calls.values()];
+    history = [...history, { role: "assistant", content: "", toolCalls: callMessages.map((call) => ({ id: call.id, type: "function" as const, function: { name: call.name, arguments: JSON.stringify(call.arguments) } })) }, ...await Promise.all(callMessages.map(async (call) => ({ role: "tool" as const, toolCallId: call.id, content: JSON.stringify(await runComputerTool(agentId, call)) })))];
+  }
+  throw new Error("The background run exceeded its eight-step tool limit.");
+}
 
 function now() {
   return new Date().toISOString();
@@ -112,49 +169,8 @@ async function parseJson(request: Request) {
 }
 
 async function invoke(routine: Routine, run: RoutineRun) {
-  if (!agentEndpoint || !agentToken) {
-    run.status = "failed";
-    run.error = "The Codex bridge is not configured.";
-    run.finishedAt = now();
-    return;
-  }
-
   try {
-    const response = await fetch(agentEndpoint, {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        "x-openbot-agent-token": agentToken,
-      },
-      body: JSON.stringify({
-        threadId: `routine:${routine.id}`,
-        runId: run.id,
-        messages: [
-          {
-            id: `routine-message:${run.id}`,
-            role: "user",
-            content: routine.prompt,
-          },
-        ],
-        forwardedProps: { openbotBotId: routine.agentId, openbotRoutineId: routine.id },
-      }),
-      signal: AbortSignal.timeout(10 * 60_000),
-    });
-    if (!response.ok) throw new Error(`Codex bridge returned ${response.status}.`);
-
-    const body = await response.text();
-    const output: string[] = [];
-    for (const line of body.split("\n")) {
-      if (!line.startsWith("data: ")) continue;
-      try {
-        const event = JSON.parse(line.slice(6)) as { type?: string; delta?: string; message?: string };
-        if (event.type === "TEXT_MESSAGE_CONTENT" && typeof event.delta === "string") output.push(event.delta);
-        if (event.type === "RUN_ERROR") throw new Error(event.message ?? "The routine failed.");
-      } catch (error) {
-        if (error instanceof Error && error.message !== "Unexpected end of JSON input") throw error;
-      }
-    }
-    run.output = output.join("").trim();
+    run.output = await invokeAgent(routine.agentId, `routine:${routine.id}`, run.id, [{ role: "user", content: routine.prompt }]);
     run.status = "succeeded";
     run.finishedAt = now();
   } catch (error) {
@@ -165,54 +181,14 @@ async function invoke(routine: Routine, run: RoutineRun) {
 }
 
 async function invokeHandoff(handoff: Handoff) {
-  if (!agentEndpoint || !agentToken) {
-    handoff.status = "failed";
-    handoff.error = "The Codex bridge is not configured.";
-    handoff.finishedAt = now();
-    return;
-  }
-
   try {
-    const response = await fetch(agentEndpoint, {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        "x-openbot-agent-token": agentToken,
-      },
-      body: JSON.stringify({
-        threadId: `handoff:${handoff.id}`,
-        runId: handoff.id,
-        messages: [
-          {
-            id: `handoff-message:${handoff.id}`,
-            role: "user",
-            content: [
-              `You are receiving a handoff from the ${handoff.fromAgentId} MONOCER lane.`,
-              `Complete this task as the ${handoff.toAgentId} lane:`,
-              handoff.task,
-              ...(handoff.context ? [`Context from the previous lane:\n${handoff.context}`] : []),
-              "Return a concise result that the originating lane can use.",
-            ].join("\n\n"),
-          },
-        ],
-        forwardedProps: {
-          openbotBotId: handoff.toAgentId,
-          openbotHandoffId: handoff.id,
-          openbotFromBotId: handoff.fromAgentId,
-        },
-      }),
-      signal: AbortSignal.timeout(10 * 60_000),
-    });
-    if (!response.ok) throw new Error(`Codex bridge returned ${response.status}.`);
-    const body = await response.text();
-    const output: string[] = [];
-    for (const line of body.split("\n")) {
-      if (!line.startsWith("data: ")) continue;
-      const event = JSON.parse(line.slice(6)) as { type?: string; delta?: string; message?: string };
-      if (event.type === "TEXT_MESSAGE_CONTENT" && typeof event.delta === "string") output.push(event.delta);
-      if (event.type === "RUN_ERROR") throw new Error(event.message ?? "The handoff failed.");
-    }
-    handoff.output = output.join("").trim();
+    handoff.output = await invokeAgent(handoff.toAgentId, `handoff:${handoff.id}`, handoff.id, [{ role: "user", content: [
+      `You are receiving a handoff from the ${handoff.fromAgentId} MONOCER lane.`,
+      `Complete this task as the ${handoff.toAgentId} lane:`,
+      handoff.task,
+      ...(handoff.context ? [`Context from the previous lane:\n${handoff.context}`] : []),
+      "Return a concise result that the originating lane can use.",
+    ].join("\n\n") }]);
     handoff.status = "succeeded";
     handoff.finishedAt = now();
   } catch (error) {
