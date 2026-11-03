@@ -1,7 +1,13 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+SOURCE_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+# macOS privacy controls can deny launchd access to a repository under Documents. Keep the
+# editable checkout there, but use the GitHub-backed runtime checkout when one has been prepared.
+ROOT="${MONOCER_RUNTIME_ROOT:-$SOURCE_ROOT}"
+if [[ "$ROOT" == "$HOME/Documents/"* && -d "$HOME/monocer-openbot" ]]; then
+  ROOT="$HOME/monocer-openbot"
+fi
 LABEL="com.monocer.openbot"
 PLIST="$HOME/Library/LaunchAgents/$LABEL.plist"
 mkdir -p "$HOME/Library/LaunchAgents"
