@@ -62,6 +62,7 @@ async function runCodexOnce(
     inputSchema: unknown;
   }>,
   onDelta: (delta: string) => void,
+  signal?: AbortSignal,
 ) {
   const child = Bun.spawn(["codex", "app-server", "--stdio"], {
     cwd: WORKDIR,
@@ -77,6 +78,8 @@ async function runCodexOnce(
   let requestId = 1;
   let completed = false;
   let finalError: string | undefined;
+  const abortChild = () => child.kill();
+  signal?.addEventListener("abort", abortChild, { once: true });
 
   const waitFor = async (id: number) => {
     while (true) {
@@ -141,6 +144,7 @@ async function runCodexOnce(
   };
 
   try {
+    if (signal?.aborted) throw new Error("Codex turn cancelled.");
     const initializeId = requestId++;
     await sendRpc(writer, {
       method: "initialize",
@@ -193,6 +197,7 @@ async function runCodexOnce(
     }
     if (finalError) throw new Error(finalError);
   } finally {
+    signal?.removeEventListener("abort", abortChild);
     try { writer.end(); } catch {}
     child.kill();
     await child.exited;
@@ -213,6 +218,7 @@ async function runCodex(
     inputSchema: unknown;
   }>,
   onDelta: (delta: string) => void,
+  signal?: AbortSignal,
 ) {
   let emitted = false;
   const forward = (delta: string) => {
@@ -220,14 +226,14 @@ async function runCodex(
     onDelta(delta);
   };
   try {
-    return await runCodexOnce(prompt, inputTools, forward);
+    return await runCodexOnce(prompt, inputTools, forward, signal);
   } catch (error) {
-    if (error instanceof ToolCallDelegated || emitted) throw error;
-    return runCodexOnce(prompt, inputTools, onDelta);
+    if (signal?.aborted || error instanceof ToolCallDelegated || emitted) throw error;
+    return runCodexOnce(prompt, inputTools, onDelta, signal);
   }
 }
 
-async function runAgent(input: RunAgentInput): Promise<Response> {
+async function runAgent(input: RunAgentInput, signal?: AbortSignal): Promise<Response> {
   const encoder = new EventEncoder();
   const stream = new ReadableStream<Uint8Array>({
     async start(controller) {
@@ -254,7 +260,7 @@ async function runAgent(input: RunAgentInput): Promise<Response> {
             textStarted = true;
           }
           send({ type: "TEXT_MESSAGE_CONTENT", messageId, delta } as BaseEvent);
-        });
+        }, signal);
         if (textStarted) send({ type: "TEXT_MESSAGE_END", messageId } as BaseEvent);
         send({ type: "RUN_FINISHED", threadId: input.threadId, runId: input.runId } as BaseEvent);
       } catch (error) {
@@ -294,7 +300,7 @@ Bun.serve({
     if (url.pathname === "/health") return Response.json({ status: "ok", model: CODEX_MODEL ?? "configured", auth: "codex-chatgpt" });
     if (url.pathname === "/ag-ui" && request.method === "POST") {
       if (!hasManagedAgentToken(request, MANAGED_AGENT_TOKEN)) return Response.json({ error: "Unauthorized." }, { status: 401 });
-      return runAgent((await request.json()) as RunAgentInput);
+      return runAgent((await request.json()) as RunAgentInput, request.signal);
     }
     return Response.json({ error: "Not found." }, { status: 404 });
   },
