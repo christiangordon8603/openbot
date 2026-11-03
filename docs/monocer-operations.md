@@ -79,6 +79,16 @@ later scheduled run can continue the work without persisting browser payloads or
 already running rejects a second manual trigger. It is loopback-only and is intended to be managed
 by the MONOCER interface.
 
+For a dedicated Mac window, build the local WebKit wrapper into Applications:
+
+```text
+scripts/build-monocer-app.sh
+```
+
+Then open `~/Applications/MONOCER.app`. It loads the same local desk at `http://localhost:3001`
+and retries automatically while the sign-in services finish starting. The wrapper contains no
+credentials and does not expose the local services beyond loopback.
+
 Agent handoffs use the same service at `GET /handoffs`, `POST /handoffs`, and
 `GET /handoffs/:id`; the MONOCER interface exposes them at `/handoffs`. To make the local stack
 start automatically when the Mac user signs in, run:
