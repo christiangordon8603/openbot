@@ -1,7 +1,7 @@
 # An example tenant package. Every Bot here is reachable the moment the deployment starts, so the
 # surface never registers an endpoint that is unavailable by default.
 agents:
-  # MONOCER's seven operating lanes. They all use the signed-in Claude bridge, while OpenBot
+  # MONOCER's seven operating lanes. They all use the signed-in Codex bridge, while OpenBot
   # supplies the computer, files, policy and audit boundary around each run.
   - id: strategy
     name: Strategy
