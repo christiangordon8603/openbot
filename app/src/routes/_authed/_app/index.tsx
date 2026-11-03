@@ -21,6 +21,7 @@ import { agentListQueryOptions } from "@/lib/agents/queries";
 import { channelListQueryOptions } from "@/lib/channels/queries";
 import { routeMessage } from "@/lib/channels/route";
 import { useStartChannel } from "@/lib/channels/start";
+import { codexHealthQueryOptions } from "@/lib/system/codex-health";
 
 export const Route = createFileRoute("/_authed/_app/")({ component: MonocerDashboard });
 
@@ -55,6 +56,7 @@ function StatCard({ icon: Icon, label, value, note }: { icon: typeof IconActivit
 function MonocerDashboard() {
   const { data: agents } = useQuery(agentListQueryOptions());
   const { data: channels = [] } = useInfiniteQuery(channelListQueryOptions());
+  const { data: codexHealth } = useQuery(codexHealthQueryOptions());
   const { start, pending } = useStartChannel();
   const [error, setError] = useState<string | null>(null);
   const fallback = agents?.[0];
@@ -69,7 +71,7 @@ function MonocerDashboard() {
   return <div className="min-h-full overflow-y-auto bg-[radial-gradient(circle_at_top_right,rgba(244,114,182,0.10),transparent_32%),radial-gradient(circle_at_20%_0%,rgba(34,211,238,0.08),transparent_28%)]"><div className="mx-auto w-full max-w-7xl px-5 pb-16 pt-8 sm:px-8 lg:px-10">
     <header className="flex flex-wrap items-start justify-between gap-5"><div><div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.24em] text-muted-foreground"><span className="inline-flex size-7 items-center justify-center rounded-lg bg-foreground text-background"><IconSparkles className="size-4" /></span>MONOCER / OPERATIONS</div><h1 className="mt-5 max-w-3xl text-4xl font-semibold tracking-[-0.04em] sm:text-5xl">The agency, in motion.</h1><p className="mt-3 max-w-2xl text-base leading-7 text-muted-foreground">A single operating surface for your Codex-powered agency team, browser workers, and the work that moves MONOCER forward.</p></div><div className="flex items-center gap-2 rounded-full border border-border/80 bg-card/80 px-3 py-2 text-xs text-muted-foreground shadow-sm"><StatusDot />Local system online</div></header>
 
-    <section className="mt-8 grid gap-3 sm:grid-cols-2 lg:grid-cols-4"><StatCard icon={IconUsers} label="Agency lanes" value={`${agencyAgents.length}`} note="Codex roles ready" /><StatCard icon={IconActivity} label="Active threads" value={`${channels?.length ?? 0}`} note="Persistent conversations" /><StatCard icon={IconBrowser} label="Browser workers" value={`${agencyAgents.length}`} note="Isolated Linux computers online" /><StatCard icon={IconBrain} label="Model layer" value="Codex" note="Signed-in Codex · gpt-5.6-luna" /></section>
+    <section className="mt-8 grid gap-3 sm:grid-cols-2 lg:grid-cols-4"><StatCard icon={IconUsers} label="Agency lanes" value={`${agencyAgents.length}`} note="Codex roles ready" /><StatCard icon={IconActivity} label="Active threads" value={`${channels?.length ?? 0}`} note="Persistent conversations" /><StatCard icon={IconBrowser} label="Browser workers" value={`${agencyAgents.length}`} note="Isolated Linux computers online" /><StatCard icon={IconBrain} label="Model layer" value="Codex" note={`Signed-in Codex · ${codexHealth?.model ?? "checking…"}`} /></section>
 
     <section className="mt-8 rounded-3xl border border-border/70 bg-card p-5 shadow-sm sm:p-6"><div className="flex flex-wrap items-center justify-between gap-4"><div className="flex items-start gap-3"><span className="flex size-10 items-center justify-center rounded-2xl bg-muted"><IconDeviceDesktop className="size-5" /></span><div><div className="text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">Dedicated workstation</div><h2 className="mt-1 text-xl font-semibold tracking-tight">MONOCER Linux Computer</h2><p className="mt-1 text-sm text-muted-foreground">A persistent local desktop for files, browser sessions, and agent-assisted work.</p></div></div><a className="inline-flex items-center gap-2 rounded-xl bg-foreground px-4 py-2.5 text-sm font-medium text-background transition hover:opacity-85" href="http://127.0.0.1:6080" target="_blank" rel="noreferrer">Open computer <IconArrowUpRight className="size-4" /></a></div><div className="mt-4 flex flex-wrap gap-2 text-xs text-muted-foreground"><span className="rounded-full bg-muted px-3 py-1.5">Linux · persistent</span><span className="rounded-full bg-muted px-3 py-1.5">Local-only access</span><span className="rounded-full bg-muted px-3 py-1.5">Per-agent computers managed below</span></div></section>
 

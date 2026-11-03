@@ -297,7 +297,10 @@ Bun.serve({
   port: PORT,
   async fetch(request) {
     const url = new URL(request.url);
-    if (url.pathname === "/health") return Response.json({ status: "ok", model: CODEX_MODEL ?? "configured", auth: "codex-chatgpt" });
+    if (url.pathname === "/health") return Response.json(
+      { status: "ok", model: CODEX_MODEL ?? "configured", auth: "codex-chatgpt" },
+      { headers: { "access-control-allow-origin": "http://localhost:3001" } },
+    );
     if (url.pathname === "/ag-ui" && request.method === "POST") {
       if (!hasManagedAgentToken(request, MANAGED_AGENT_TOKEN)) return Response.json({ error: "Unauthorized." }, { status: 401 });
       return runAgent((await request.json()) as RunAgentInput, request.signal);
