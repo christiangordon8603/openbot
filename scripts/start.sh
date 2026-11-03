@@ -177,7 +177,8 @@ docker compose up -d --build "${SERVICES[@]}" >/dev/null
 # The image is built by the first interactive setup when it is missing. Rebuilding it on every
 # macOS login makes launchd wait on Docker's build stream for minutes and can leave the login job
 # wedged after the image has already completed successfully.
-if ! docker compose images -q migrate | grep -q .; then
+MIGRATE_IMAGE="$(docker compose config --images | awk '$0 ~ /migrate$/ { print; exit }')"
+if [ -z "$MIGRATE_IMAGE" ] || ! docker image inspect "$MIGRATE_IMAGE" >/dev/null 2>&1; then
   if ! docker compose build migrate >"$LOGS/migrate-build.log" 2>&1; then
     red "  The migration image did not build."
     red "  Log: $LOGS/migrate-build.log"
