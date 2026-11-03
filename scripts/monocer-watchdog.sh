@@ -31,12 +31,24 @@ run_full_start() {
   trap - RETURN
 }
 
+start_server_direct() {
+  (cd "$ROOT/server" && exec env PORT="${SERVER_PORT:-3001}" APP_DIST_DIR="$ROOT/app/dist" \
+    COMPUTER_SUPERVISOR_URL="${COMPUTER_SUPERVISOR_URL:-http://localhost:4500}" \
+    SUPERVISOR_TOKEN="${SUPERVISOR_TOKEN:-openbot-dev-supervisor-token}" \
+    COMPUTER_TOKEN="${COMPUTER_TOKEN:-openbot-dev-computer-token}" \
+    bun --env-file=../.env src/index.ts) >>"$LOGS/server.log" 2>&1 </dev/null &
+}
+
 while true; do
   # A server/container outage needs the full idempotent startup path. Host bridges and the
   # dashboard have cheaper direct restarts; rebuilding Docker for a crashed bridge made recovery
   # take minutes even though the computer stack was still healthy.
   if ! healthy "http://127.0.0.1:${SERVER_PORT:-3001}/api/capabilities"; then
-    run_full_start
+    start_server_direct
+    sleep 3
+    if ! healthy "http://127.0.0.1:${SERVER_PORT:-3001}/api/capabilities"; then
+      run_full_start
+    fi
   fi
 
   if ! healthy "http://127.0.0.1:${CODEX_BRIDGE_PORT:-4203}/health"; then
