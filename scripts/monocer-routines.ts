@@ -43,7 +43,27 @@ type Handoff = {
   error?: string;
 };
 
-type Store = { routines: Routine[]; runs: RoutineRun[]; handoffs: Handoff[] };
+type MissionResult = {
+  agentId: string;
+  status: "succeeded" | "failed";
+  output?: string;
+  error?: string;
+};
+
+type Mission = {
+  id: string;
+  task: string;
+  agentIds: string[];
+  synthesisAgentId: string;
+  status: "running" | "succeeded" | "partial" | "failed";
+  createdAt: string;
+  finishedAt?: string;
+  results: MissionResult[];
+  synthesis?: string;
+  error?: string;
+};
+
+type Store = { routines: Routine[]; runs: RoutineRun[]; handoffs: Handoff[]; missions: Mission[] };
 
 const MAX_MEMORY_MESSAGES = 12;
 const MAX_MEMORY_CHARS = 24_000;
@@ -56,6 +76,7 @@ const serverEndpoint = process.env.OPENBOT_SERVER_URL?.trim() ?? "http://127.0.0
 const tickMs = 15_000;
 let writeQueue = Promise.resolve();
 const activeRoutines = new Set<string>();
+const activeMissions = new Set<string>();
 
 const backgroundTools = [
   { type: "function", name: "computer_navigate", description: "Open a web page on the assigned MONOCER computer. Returns its title and readable text.", parameters: { type: "object", properties: { url: { type: "string", description: "Full web address, including https://" } }, required: ["url"], additionalProperties: false } },
@@ -88,11 +109,17 @@ async function runComputerTool(agentId: string, call: BackgroundToolCall) {
   return response.ok ? parsed : { ok: false, status: response.status, result: parsed };
 }
 
-async function invokeAgent(agentId: string, threadId: string, runId: string, messages: BackgroundMessage[]) {
+async function invokeAgent(
+  agentId: string,
+  threadId: string,
+  runId: string,
+  messages: BackgroundMessage[],
+  tools = backgroundTools,
+) {
   if (!agentEndpoint || !agentToken) throw new Error("The Codex bridge is not configured.");
   let history = [...messages];
   for (let step = 0; step < 8; step += 1) {
-    const response = await fetch(agentEndpoint, { method: "POST", headers: { "content-type": "application/json", "x-openbot-agent-token": agentToken }, body: JSON.stringify({ threadId, runId: `${runId}:${step}`, messages: history, tools: backgroundTools, forwardedProps: { openbotBotId: agentId, openbotBackgroundRunId: runId } }), signal: AbortSignal.timeout(10 * 60_000) });
+    const response = await fetch(agentEndpoint, { method: "POST", headers: { "content-type": "application/json", "x-openbot-agent-token": agentToken }, body: JSON.stringify({ threadId, runId: `${runId}:${step}`, messages: history, tools, forwardedProps: { openbotBotId: agentId, openbotBackgroundRunId: runId } }), signal: AbortSignal.timeout(10 * 60_000) });
     if (!response.ok) throw new Error(`Codex bridge returned ${response.status}.`);
     const body = await response.text();
     const output: string[] = [];
@@ -150,7 +177,7 @@ function boundedMemory(messages: Array<{ role: "user" | "assistant"; content: st
 async function readStore(): Promise<Store> {
   try {
     const file = Bun.file(filePath);
-    if (!(await file.exists())) return { routines: [], runs: [], handoffs: [] };
+    if (!(await file.exists())) return { routines: [], runs: [], handoffs: [], missions: [] };
     const parsed = (await file.json()) as Partial<Store>;
     return {
       routines: Array.isArray(parsed.routines)
@@ -172,9 +199,10 @@ async function readStore(): Promise<Store> {
         : [],
       runs: Array.isArray(parsed.runs) ? parsed.runs.slice(-500) : [],
       handoffs: Array.isArray(parsed.handoffs) ? parsed.handoffs.slice(-500) : [],
+      missions: Array.isArray(parsed.missions) ? parsed.missions.slice(-100) : [],
     };
   } catch {
-    return { routines: [], runs: [], handoffs: [] };
+    return { routines: [], runs: [], handoffs: [], missions: [] };
   }
 }
 
@@ -254,6 +282,77 @@ async function runHandoff(handoff: Handoff) {
   console.info(JSON.stringify({ type: "agent-handoff", handoffId: handoff.id, status: handoff.status }));
 }
 
+async function runMission(mission: Mission) {
+  if (activeMissions.has(mission.id)) return;
+  activeMissions.add(mission.id);
+  try {
+    const workerResults = await Promise.all(
+      mission.agentIds.map(async (agentId): Promise<MissionResult> => {
+        try {
+          const output = await invokeAgent(
+            agentId,
+            `mission:${mission.id}:${agentId}`,
+            `${mission.id}:${agentId}`,
+            [{
+              role: "user",
+              content: [
+                `You are the ${agentId} lane in a MONOCER multi-agent mission.`,
+                "Analyze the task from your specialist perspective.",
+                "Do not use browser or computer tools in this parallel pass; return concise findings, assumptions, risks, and concrete recommendations for the lead lane.",
+                `Mission task:\n${mission.task}`,
+              ].join("\n\n"),
+            }],
+            [],
+          );
+          return { agentId, status: "succeeded", output };
+        } catch (error) {
+          return { agentId, status: "failed", error: error instanceof Error ? error.message : String(error) };
+        }
+      }),
+    );
+    mission.results = workerResults;
+    const evidence = workerResults.map((result) => [
+      `LANE: ${result.agentId}`,
+      `STATUS: ${result.status}`,
+      result.output ?? `ERROR: ${result.error ?? "No result."}`,
+    ].join("\n")).join("\n\n---\n\n");
+    try {
+      mission.synthesis = await invokeAgent(
+        mission.synthesisAgentId,
+        `mission:${mission.id}:synthesis`,
+        `${mission.id}:synthesis`,
+        [{
+          role: "user",
+          content: [
+            `You are the lead ${mission.synthesisAgentId} lane for a MONOCER mission.`,
+            "Synthesize the specialist findings into one decisive answer.",
+            "Call out disagreement or missing evidence, then give prioritized next actions. Do not mention internal orchestration unless it helps explain a limitation.",
+            `Original task:\n${mission.task}`,
+            `Specialist findings:\n${evidence}`,
+          ].join("\n\n"),
+        }],
+        [],
+      );
+    } catch (error) {
+      mission.error = error instanceof Error ? error.message : String(error);
+    }
+    const successful = workerResults.filter((result) => result.status === "succeeded").length;
+    mission.status = mission.synthesis && successful === workerResults.length ? "succeeded" : successful > 0 ? "partial" : "failed";
+    mission.finishedAt = now();
+  } catch (error) {
+    mission.status = "failed";
+    mission.error = error instanceof Error ? error.message : String(error);
+    mission.finishedAt = now();
+  } finally {
+    const store = await readStore();
+    const saved = store.missions.find((item) => item.id === mission.id);
+    if (saved) Object.assign(saved, mission);
+    await saveStore(store);
+    activeMissions.delete(mission.id);
+    console.info(JSON.stringify({ type: "mission", missionId: mission.id, status: mission.status }));
+  }
+}
+
 async function runRoutine(routine: Routine) {
   if (activeRoutines.has(routine.id)) return false;
   activeRoutines.add(routine.id);
@@ -309,6 +408,27 @@ const server = Bun.serve({
     if (url.pathname === "/health") return json({ status: "ok", service: "monocer-routines" });
     if (url.pathname === "/routines" && request.method === "GET") return json(await readStore());
     if (url.pathname === "/handoffs" && request.method === "GET") return json({ handoffs: (await readStore()).handoffs });
+    if (url.pathname === "/missions" && request.method === "GET") return json({ missions: (await readStore()).missions });
+    if (url.pathname === "/missions" && request.method === "POST") {
+      const input = await parseJson(request);
+      const task = text(input?.task, 20_000);
+      const agentIds = Array.isArray(input?.agentIds)
+        ? [...new Set(input.agentIds.map(safeId).filter((value): value is string => Boolean(value)))].slice(0, 7)
+        : [];
+      const synthesisAgentId = safeId(input?.synthesisAgentId) ?? agentIds[0];
+      if (!task || agentIds.length === 0 || !synthesisAgentId) return json({ error: "task, at least one agentId, and synthesisAgentId are required." }, 400);
+      const mission: Mission = { id: `mission_${crypto.randomUUID()}`, task, agentIds, synthesisAgentId, status: "running", createdAt: now(), results: [] };
+      const store = await readStore();
+      store.missions.push(mission);
+      await saveStore(store);
+      void runMission(mission);
+      return json({ mission }, 202);
+    }
+    const missionMatch = url.pathname.match(/^\/missions\/([^/]+)$/);
+    if (missionMatch && request.method === "GET") {
+      const mission = (await readStore()).missions.find((item) => item.id === missionMatch[1]);
+      return mission ? json({ mission }) : json({ error: "Mission not found." }, 404);
+    }
     if (url.pathname === "/handoffs" && request.method === "POST") {
       const input = await parseJson(request);
       const fromAgentId = safeId(input?.fromAgentId);
