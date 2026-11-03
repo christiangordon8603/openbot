@@ -8,6 +8,45 @@ const CODEX_MODEL = process.env.CODEX_MODEL?.trim() || undefined;
 const WORKDIR = process.env.CODEX_WORKDIR?.trim() || process.cwd();
 if (!MANAGED_AGENT_TOKEN) throw new Error("MANAGED_AGENT_TOKEN is required");
 
+type ModelSummary = {
+  slug: string;
+  displayName: string;
+  description: string;
+  supportedInApi: boolean;
+  visibility: string;
+};
+
+const CODEX_HOME = process.env.CODEX_HOME?.trim() || `${process.env.HOME ?? ""}/.codex`;
+const MODEL_CACHE_PATH = `${CODEX_HOME}/models_cache.codex_work_desktop.json`;
+
+async function loadModelCatalog(): Promise<ModelSummary[]> {
+  try {
+    const cached = JSON.parse(await Bun.file(MODEL_CACHE_PATH).text()) as {
+      models?: Array<Record<string, unknown>>;
+    };
+    return (cached.models ?? [])
+      .map((model) => ({
+        slug: String(model.slug ?? "").trim(),
+        displayName: String(model.display_name ?? model.slug ?? "").trim(),
+        description: String(model.description ?? "").trim(),
+        supportedInApi: model.supported_in_api !== false,
+        visibility: String(model.visibility ?? "list"),
+      }))
+      .filter((model) => model.slug && model.supportedInApi);
+  } catch {
+    return CODEX_MODEL
+      ? [{ slug: CODEX_MODEL, displayName: CODEX_MODEL, description: "Active Codex model.", supportedInApi: true, visibility: "list" }]
+      : [];
+  }
+}
+
+async function resolveModel(input: RunAgentInput) {
+  const requested = String((input.forwardedProps as Record<string, unknown> | undefined)?.openbotModel ?? "").trim();
+  if (!requested) return CODEX_MODEL;
+  const catalog = await loadModelCatalog();
+  return catalog.some((model) => model.slug === requested) ? requested : CODEX_MODEL;
+}
+
 type RpcMessage = {
   id?: number | string;
   method?: string;
@@ -55,6 +94,7 @@ function sendRpc(stdin: Bun.FileSink, message: unknown) {
 
 async function runCodexOnce(
   prompt: string,
+  model: string | undefined,
   inputTools: Array<{
     type: "function";
     name: string;
@@ -164,7 +204,7 @@ async function runCodexOnce(
       id: threadRequestId,
       params: {
         cwd: WORKDIR,
-        model: CODEX_MODEL,
+        model,
         approvalPolicy: "never",
         sandbox: "read-only",
         ephemeral: true,
@@ -211,6 +251,7 @@ async function runCodexOnce(
  */
 async function runCodex(
   prompt: string,
+  model: string | undefined,
   inputTools: Array<{
     type: "function";
     name: string;
@@ -226,10 +267,10 @@ async function runCodex(
     onDelta(delta);
   };
   try {
-    return await runCodexOnce(prompt, inputTools, forward, signal);
+    return await runCodexOnce(prompt, model, inputTools, forward, signal);
   } catch (error) {
     if (signal?.aborted || error instanceof ToolCallDelegated || emitted) throw error;
-    return runCodexOnce(prompt, inputTools, onDelta, signal);
+    return runCodexOnce(prompt, model, inputTools, onDelta, signal);
   }
 }
 
@@ -249,7 +290,7 @@ async function runAgent(input: RunAgentInput, signal?: AbortSignal): Promise<Res
           "If the conversation contains a TOOL RESULT, treat it as the result of a tool already executed by the MONOCER surface. Do not repeat that tool call unless the result explicitly says it failed or asks for a retry.",
           transcript(input),
         ].join("\n\n");
-        await runCodex(prompt, input.tools.map((tool) => ({
+        await runCodex(prompt, await resolveModel(input), input.tools.map((tool) => ({
           type: "function" as const,
           name: tool.name,
           description: tool.description,
@@ -307,6 +348,15 @@ Bun.serve({
           },
         },
       );
+    }
+    if (url.pathname === "/models") {
+      const models = await loadModelCatalog();
+      return new Response(JSON.stringify({ activeModel: CODEX_MODEL ?? null, models }), {
+        headers: {
+          "content-type": "application/json",
+          "access-control-allow-origin": "http://localhost:3001",
+        },
+      });
     }
     if (url.pathname === "/ag-ui" && request.method === "POST") {
       if (!hasManagedAgentToken(request, MANAGED_AGENT_TOKEN)) return Response.json({ error: "Unauthorized." }, { status: 401 });
