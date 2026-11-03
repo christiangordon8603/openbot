@@ -212,6 +212,7 @@ async function runAgent(input: RunAgentInput): Promise<Response> {
         const prompt = [
           "You are the Codex-powered MONOCER agency assistant.",
           "Use the conversation below as the user's current request and context.",
+          "If the conversation contains a TOOL RESULT, treat it as the result of a tool already executed by the MONOCER surface. Do not repeat that tool call unless the result explicitly says it failed or asks for a retry.",
           transcript(input),
         ].join("\n\n");
         await runCodex(prompt, input.tools.map((tool) => ({
