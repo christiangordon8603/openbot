@@ -33,7 +33,19 @@ class ToolCallDelegated extends Error {
 
 function transcript(input: RunAgentInput) {
   return input.messages
-    .map((message) => `${message.role.toUpperCase()}: ${String(message.content ?? "")}`)
+    .map((message) => {
+      const content = String(message.content ?? "");
+      if (message.role === "assistant" && "toolCalls" in message && message.toolCalls?.length) {
+        const calls = message.toolCalls
+          .map((call) => `${call.function.name}(${call.function.arguments})`)
+          .join(", ");
+        return `ASSISTANT TOOL CALLS: ${calls}${content ? `\n${content}` : ""}`;
+      }
+      if (message.role === "tool" && "toolCallId" in message) {
+        return `TOOL RESULT [${message.toolCallId}]: ${content}`;
+      }
+      return `${message.role.toUpperCase()}: ${content}`;
+    })
     .join("\n\n");
 }
 
@@ -69,7 +81,7 @@ async function runCodex(
   const waitFor = async (id: number) => {
     while (true) {
       const { value, done } = await reader.read();
-      if (done) break;
+      if (done) return id === -1 ? undefined : undefined;
       buffer += decoder.decode(value, { stream: true });
       const lines = buffer.split("\n");
       buffer = lines.pop() ?? "";
@@ -175,6 +187,9 @@ async function runCodex(
     if (turnResponse?.error) throw new Error(turnResponse.error.message ?? "Codex turn failed");
     while (!completed && !finalError) {
       await waitFor(-1);
+      if (!completed && !finalError) {
+        throw new Error("Codex ended before completing the turn.");
+      }
     }
     if (finalError) throw new Error(finalError);
   } finally {

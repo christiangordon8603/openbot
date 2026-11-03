@@ -223,6 +223,16 @@ for table in agent_profiles agent_preferences; do
 done
 green "  coworker tables migrated"
 
+# The two local bridges are intentionally small packages outside the main workspace package. Install
+# their AG-UI dependencies on first run so a fresh checkout is runnable without any manual setup;
+# `--no-save` keeps generated dependency state out of the repository.
+for bridge in agent-claude agent-codex; do
+  if [ ! -d "$ROOT/$bridge/node_modules/@ag-ui/core" ]; then
+    info "  installing $bridge dependencies"
+    (cd "$ROOT/$bridge" && bun install --no-save >/dev/null)
+  fi
+done
+
 # Resolved at the top, where the default that .env deliberately does not carry is applied. Reading
 # .env again here would have demanded the line be present in a file the comment above that default
 # says must not contain it, which is how this came to refuse every fresh clone: `cp .env.example
