@@ -23,12 +23,15 @@ run_full_start() {
     rmdir "$lock" 2>/dev/null || return 0
     mkdir "$lock" 2>/dev/null || return 0
   fi
-  printf '%s\n' "$$" >"$lock/pid"
-  trap 'unlink "$LOGS/full-start.lock/pid" 2>/dev/null || true; rmdir "$LOGS/full-start.lock" 2>/dev/null || true' RETURN
-  "$ROOT/scripts/start.sh" >>"$LOGS/watchdog.log" 2>&1 || true
-  unlink "$lock/pid" 2>/dev/null || true
-  rmdir "$lock" 2>/dev/null || true
-  trap - RETURN
+  # Do not hold the watchdog inside Docker startup. A full recovery can take a while, and the
+  # bridge/routines checks still need to run while it is in progress. The lock remains the single
+  # owner of this recovery; its pid is the background helper, not the long-lived watchdog.
+  (
+    "$ROOT/scripts/start.sh" >>"$LOGS/watchdog.log" 2>&1 || true
+    unlink "$lock/pid" 2>/dev/null || true
+    rmdir "$lock" 2>/dev/null || true
+  ) &
+  printf '%s\n' "$!" >"$lock/pid"
 }
 
 start_server_direct() {
