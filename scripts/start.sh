@@ -140,6 +140,17 @@ wait_for() {
   exit 1
 }
 
+wait_for_reachable() {
+  local url="$1" name="$2" tries="${3:-40}"
+  for _ in $(seq 1 "$tries"); do
+    curl -sS --max-time 3 "$url" >/dev/null 2>&1 && { green "  $name reachable"; return 0; }
+    sleep 1
+  done
+  red "  $name never became reachable at $url"
+  red "  Log: $LOGS/${name}.log"
+  exit 1
+}
+
 echo
 echo "OpenBot"
 echo "======="
@@ -191,7 +202,7 @@ if ! docker compose run --rm migrate >"$LOGS/migrate.log" 2>&1; then
   exit 1
 fi
 wait_for "http://localhost:$COMPUTER_PORT/health" "agent-computer"
-wait_for "http://127.0.0.1:${MONOCER_DESKTOP_PORT:-6080}/" "monocer-linux"
+wait_for_reachable "http://127.0.0.1:${MONOCER_DESKTOP_PORT:-6080}/" "monocer-linux"
 CLAUDE_BRIDGE_LOG="$LOGS/claude-bridge.log"
 CLAUDE_BRIDGE_PID="$LOGS/claude-bridge.pid"
 if ! curl -fsS --max-time 3 "http://127.0.0.1:${CLAUDE_BRIDGE_PORT:-4202}/health" >/dev/null 2>&1; then
