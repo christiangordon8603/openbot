@@ -4,7 +4,8 @@ import WebKit
 final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate {
     private var window: NSWindow!
     private var webView: WKWebView!
-    private let deskURL = URL(string: "http://localhost:3001")!
+    // The API owns 3001; the branded MONOCER interface is served on APP_PORT (3010 by default).
+    private let deskURL = URL(string: "http://localhost:3010")!
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         let configuration = WKWebViewConfiguration()
