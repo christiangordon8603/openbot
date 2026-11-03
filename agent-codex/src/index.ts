@@ -53,7 +53,7 @@ function sendRpc(stdin: Bun.FileSink, message: unknown) {
   return stdin.write(`${JSON.stringify(message)}\n`);
 }
 
-async function runCodex(
+async function runCodexOnce(
   prompt: string,
   inputTools: Array<{
     type: "function";
@@ -196,6 +196,34 @@ async function runCodex(
     try { writer.end(); } catch {}
     child.kill();
     await child.exited;
+  }
+}
+
+/**
+ * Recover one transient app-server startup/transport failure, but never replay a turn after it has
+ * started producing an answer or delegated a tool. Replaying after either point could duplicate a
+ * visible answer or a real computer action.
+ */
+async function runCodex(
+  prompt: string,
+  inputTools: Array<{
+    type: "function";
+    name: string;
+    description: string;
+    inputSchema: unknown;
+  }>,
+  onDelta: (delta: string) => void,
+) {
+  let emitted = false;
+  const forward = (delta: string) => {
+    emitted = true;
+    onDelta(delta);
+  };
+  try {
+    return await runCodexOnce(prompt, inputTools, forward);
+  } catch (error) {
+    if (error instanceof ToolCallDelegated || emitted) throw error;
+    return runCodexOnce(prompt, inputTools, onDelta);
   }
 }
 
