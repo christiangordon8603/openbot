@@ -12,10 +12,21 @@ healthy() {
 run_full_start() {
   local lock="$LOGS/full-start.lock"
   if ! mkdir "$lock" 2>/dev/null; then
-    return 0
+    local owner=""
+    if [ -f "$lock/pid" ]; then
+      owner="$(<"$lock/pid")"
+    fi
+    if [ -n "$owner" ] && kill -0 "$owner" 2>/dev/null; then
+      return 0
+    fi
+    unlink "$lock/pid" 2>/dev/null || true
+    rmdir "$lock" 2>/dev/null || return 0
+    mkdir "$lock" 2>/dev/null || return 0
   fi
-  trap 'rmdir "$LOGS/full-start.lock" 2>/dev/null || true' RETURN
+  printf '%s\n' "$$" >"$lock/pid"
+  trap 'unlink "$LOGS/full-start.lock/pid" 2>/dev/null || true; rmdir "$LOGS/full-start.lock" 2>/dev/null || true' RETURN
   "$ROOT/scripts/start.sh" >>"$LOGS/watchdog.log" 2>&1 || true
+  unlink "$lock/pid" 2>/dev/null || true
   rmdir "$lock" 2>/dev/null || true
   trap - RETURN
 }
