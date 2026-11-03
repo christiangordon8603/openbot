@@ -1,5 +1,5 @@
 import type { Message } from "@ag-ui/core";
-import { IconBox } from "@tabler/icons-react";
+import { IconBox, IconRefresh } from "@tabler/icons-react";
 import { useRenderToolCall } from "@copilotkit/react-core/v2";
 import { motion, useReducedMotion } from "motion/react";
 import { memo, useEffect, useMemo, useRef } from "react";
@@ -48,6 +48,8 @@ type ChatTranscriptProps = {
    * be told, and only the thing that ended the turn knows which one happened.
    */
   stopped?: string;
+  /** Retry the preserved last user turn without adding a duplicate message. */
+  onRetry?: () => void;
 };
 
 /** One shared empty array, so a screen without a queue does not hand down a new one per render. */
@@ -114,15 +116,16 @@ function Thinking() {
  * and the conversation is sent back to the model on the next turn, so the Bot would then read its
  * own obituary as something it had written.
  */
-function Stopped({ reason }: { reason: string }) {
+function Stopped({ reason, onRetry }: { reason: string; onRetry?: () => void }) {
   return (
-    <p
-      className="text-destructive text-sm"
-      data-testid="transcript-stopped"
-      role="alert"
-    >
-      {reason}
-    </p>
+    <div className="flex items-center gap-3 text-destructive text-sm" data-testid="transcript-stopped" role="alert">
+      <span>{reason}</span>
+      {onRetry ? (
+        <button className="inline-flex items-center gap-1 rounded-md border border-destructive/30 px-2 py-1 text-xs hover:bg-destructive/10" onClick={onRetry} type="button">
+          <IconRefresh className="size-3" /> Retry
+        </button>
+      ) : null}
+    </div>
   );
 }
 
@@ -530,6 +533,7 @@ export function ChatTranscript({
   onRemoveQueued,
   queued = EMPTY_QUEUE,
   stopped,
+  onRetry,
 }: ChatTranscriptProps) {
   /*
    * NOT MEMOISED, AND THAT IS DELIBERATE. `useMemo` keyed on `messages` looks obviously right and
@@ -628,7 +632,7 @@ export function ChatTranscript({
              * shimmering "Thinking" under a line saying the Bot stopped would contradict it.
              */}
             {stopped ? (
-              <Stopped reason={stopped} />
+              <Stopped onRetry={onRetry} reason={stopped} />
             ) : waitingOnFirstToken ? (
               <Thinking />
             ) : null}

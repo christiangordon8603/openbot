@@ -238,6 +238,23 @@ export function ChannelChat({
     }
   };
 
+  /** Re-run the durable last turn in place; do not append a second copy of the user's message. */
+  const retryLastTurn = async () => {
+    if (turnsInFlight > 0 || !agent.messages.some((message) => message.role === "user")) return;
+    setRunError(null);
+    awaitingReply.current = true;
+    const repaired = repairUnansweredToolCalls(agent.messages);
+    if (repaired !== agent.messages) agent.setMessages(repaired as typeof agent.messages);
+    setTurnsInFlight((count) => count + 1);
+    setRunsInFlight((count) => count + 1);
+    try {
+      await copilotkit.runAgent({ agent });
+    } finally {
+      setRunsInFlight((count) => count - 1);
+      setTurnsInFlight((count) => count - 1);
+    }
+  };
+
   /**
    * Send a user turn through the channel, including activity reporting and history repair.
    *
@@ -395,6 +412,7 @@ export function ChannelChat({
          * run before closing it; see server/src/channels/stall-guard.ts.
          */
         stopped={runError ?? undefined}
+        onRetry={() => void retryLastTurn()}
       />
     </ConversationProvider>
   );
