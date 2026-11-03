@@ -184,7 +184,12 @@ done
 
 export SUPERVISOR_TOKEN COMPUTER_TOKEN
 export COMPUTER_PORT BOT_PORT LANGGRAPH_PORT SUPERVISOR_PORT ROUTINES_PORT
-docker compose up -d --build "${SERVICES[@]}" >/dev/null
+# Reuse already-built images during normal login and watchdog recovery. A full image rebuild here
+# made a single host-process restart take minutes and allowed overlapping recovery jobs to pile up.
+# If an image is missing or the existing image cannot start, fall back to the first-run build path.
+if ! docker compose up -d "${SERVICES[@]}" >/dev/null 2>&1; then
+  docker compose up -d --build "${SERVICES[@]}" >/dev/null
+fi
 # The image is built by the first interactive setup when it is missing. Rebuilding it on every
 # macOS login makes launchd wait on Docker's build stream for minutes and can leave the login job
 # wedged after the image has already completed successfully.
