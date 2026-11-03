@@ -19,6 +19,10 @@ COPY bunfig.toml bunfig.toml
 COPY app/package.json app/package.json
 COPY server/package.json server/package.json
 COPY worker/package.json worker/package.json
+COPY agent-bot/package.json agent-bot/package.json
+COPY agent-langgraph/package.json agent-langgraph/package.json
+COPY agent-claude/package.json agent-claude/package.json
+COPY agent-codex/package.json agent-codex/package.json
 RUN bun install --frozen-lockfile
 
 

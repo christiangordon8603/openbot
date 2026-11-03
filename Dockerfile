@@ -43,6 +43,10 @@ COPY tsconfig.base.json bunfig.toml ./
 COPY app/package.json app/package.json
 COPY server/package.json server/package.json
 COPY worker/package.json worker/package.json
+COPY agent-bot/package.json agent-bot/package.json
+COPY agent-langgraph/package.json agent-langgraph/package.json
+COPY agent-claude/package.json agent-claude/package.json
+COPY agent-codex/package.json agent-codex/package.json
 RUN bun install --frozen-lockfile
 
 # The lockfile travels with the manifest, because `--frozen-lockfile` with no lockfile in the context
@@ -61,6 +65,11 @@ RUN mkdir -p /prod && cp package.json bun.lock /prod/ \
   && cp /src/app/package.json app/package.json \
   && cp /src/server/package.json server/package.json \
   && cp /src/worker/package.json worker/package.json \
+  && mkdir -p agent-bot agent-langgraph agent-claude agent-codex \
+  && cp /src/agent-bot/package.json agent-bot/package.json \
+  && cp /src/agent-langgraph/package.json agent-langgraph/package.json \
+  && cp /src/agent-claude/package.json agent-claude/package.json \
+  && cp /src/agent-codex/package.json agent-codex/package.json \
   && bun install --frozen-lockfile --production
 
 
@@ -105,6 +114,10 @@ COPY --from=deps /src/package.json package.json
 COPY --from=deps /src/bun.lock bun.lock
 COPY --from=deps /src/server/node_modules server/node_modules
 COPY --from=deps /src/agent-computer/node_modules agent-computer/node_modules
+COPY --from=deps /src/agent-bot/package.json agent-bot/package.json
+COPY --from=deps /src/agent-langgraph/package.json agent-langgraph/package.json
+COPY --from=deps /src/agent-claude/package.json agent-claude/package.json
+COPY --from=deps /src/agent-codex/package.json agent-codex/package.json
 
 COPY server server
 COPY shared shared
