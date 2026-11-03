@@ -221,7 +221,7 @@ function json(data: unknown, status = 200) {
   return Response.json(data, {
     status,
     headers: {
-      "access-control-allow-origin": "http://localhost:3001",
+      "access-control-allow-origin": "http://localhost:3010",
       "access-control-allow-methods": "GET,POST,PATCH,DELETE,OPTIONS",
       "access-control-allow-headers": "content-type",
     },
