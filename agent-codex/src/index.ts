@@ -1,5 +1,7 @@
 import type { BaseEvent, RunAgentInput } from "@ag-ui/core";
 import { EventEncoder } from "@ag-ui/encoder";
+import { existsSync } from "node:fs";
+import { homedir } from "node:os";
 import { hasManagedAgentToken } from "../../shared/agent-authorisation";
 
 const PORT = Number.parseInt(process.env.PORT ?? "4203", 10);
@@ -7,6 +9,16 @@ const MANAGED_AGENT_TOKEN = process.env.MANAGED_AGENT_TOKEN?.trim();
 const CODEX_MODEL = process.env.CODEX_MODEL?.trim() || undefined;
 const WORKDIR = process.env.CODEX_WORKDIR?.trim() || process.cwd();
 if (!MANAGED_AGENT_TOKEN) throw new Error("MANAGED_AGENT_TOKEN is required");
+
+const CODEX_EXECUTABLE = (() => {
+  const candidates = [
+    process.env.CODEX_BIN?.trim(),
+    Bun.which("codex"),
+    `${homedir()}/.local/bin/codex`,
+    "/Applications/ChatGPT.app/Contents/Resources/codex-cli/CodexCLI.app/Contents/MacOS/codex",
+  ].filter((candidate): candidate is string => Boolean(candidate));
+  return candidates.find((candidate) => candidate === "codex" || existsSync(candidate)) ?? "codex";
+})();
 
 type ModelSummary = {
   slug: string;
@@ -117,7 +129,7 @@ async function runCodexOnce(
   onDelta: (delta: string) => void,
   signal?: AbortSignal,
 ) {
-  const child = Bun.spawn(["codex", "app-server", "--stdio"], {
+  const child = Bun.spawn([CODEX_EXECUTABLE, "app-server", "--stdio"], {
     cwd: WORKDIR,
     stdin: "pipe",
     stdout: "pipe",
