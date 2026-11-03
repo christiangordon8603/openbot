@@ -47,6 +47,19 @@ async function resolveModel(input: RunAgentInput) {
   return catalog.some((model) => model.slug === requested) ? requested : CODEX_MODEL;
 }
 
+function corsHeaders(request: Request) {
+  const origin = request.headers.get("origin");
+  const allowedOrigins = new Set([
+    "http://localhost:3001",
+    "http://localhost:3010",
+    "http://127.0.0.1:3001",
+    "http://127.0.0.1:3010",
+  ]);
+  return origin && allowedOrigins.has(origin)
+    ? { "access-control-allow-origin": origin, vary: "Origin" }
+    : {};
+}
+
 type RpcMessage = {
   id?: number | string;
   method?: string;
@@ -344,7 +357,7 @@ Bun.serve({
         {
           headers: {
             "content-type": "application/json",
-            "access-control-allow-origin": "http://localhost:3001",
+            ...corsHeaders(request),
           },
         },
       );
@@ -354,7 +367,7 @@ Bun.serve({
       return new Response(JSON.stringify({ activeModel: CODEX_MODEL ?? null, models }), {
         headers: {
           "content-type": "application/json",
-          "access-control-allow-origin": "http://localhost:3001",
+          ...corsHeaders(request),
         },
       });
     }
