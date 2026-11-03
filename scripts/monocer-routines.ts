@@ -16,6 +16,8 @@ type Routine = {
   createdAt: string;
   updatedAt: string;
   lastRunAt?: string;
+  /** Bounded cross-run context; tool payloads are intentionally not persisted. */
+  memory?: Array<{ role: "user" | "assistant"; content: string }>;
 };
 
 type RoutineRun = {
@@ -42,6 +44,9 @@ type Handoff = {
 };
 
 type Store = { routines: Routine[]; runs: RoutineRun[]; handoffs: Handoff[] };
+
+const MAX_MEMORY_MESSAGES = 12;
+const MAX_MEMORY_CHARS = 24_000;
 
 const port = Number.parseInt(process.env.ROUTINES_PORT ?? "4400", 10);
 const filePath = process.env.ROUTINES_FILE ?? `${process.cwd()}/.data/monocer-routines.json`;
@@ -128,13 +133,42 @@ function text(value: unknown, max: number) {
     : null;
 }
 
+function boundedMemory(messages: Array<{ role: "user" | "assistant"; content: string }>) {
+  const kept: Array<{ role: "user" | "assistant"; content: string }> = [];
+  let chars = 0;
+  for (const message of messages.slice(-MAX_MEMORY_MESSAGES).reverse()) {
+    const content = message.content.trim();
+    if (!content) continue;
+    if (chars + content.length > MAX_MEMORY_CHARS && kept.length > 0) break;
+    kept.push({ role: message.role, content: content.slice(0, MAX_MEMORY_CHARS) });
+    chars += content.length;
+  }
+  return kept.reverse();
+}
+
 async function readStore(): Promise<Store> {
   try {
     const file = Bun.file(filePath);
     if (!(await file.exists())) return { routines: [], runs: [], handoffs: [] };
     const parsed = (await file.json()) as Partial<Store>;
     return {
-      routines: Array.isArray(parsed.routines) ? parsed.routines : [],
+      routines: Array.isArray(parsed.routines)
+        ? parsed.routines.map((routine) => ({
+            ...routine,
+            ...(Array.isArray(routine.memory)
+              ? {
+                  memory: boundedMemory(
+                    routine.memory.filter(
+                      (message) =>
+                        message &&
+                        (message.role === "user" || message.role === "assistant") &&
+                        typeof message.content === "string",
+                    ),
+                  ),
+                }
+              : {}),
+          }))
+        : [],
       runs: Array.isArray(parsed.runs) ? parsed.runs.slice(-500) : [],
       handoffs: Array.isArray(parsed.handoffs) ? parsed.handoffs.slice(-500) : [],
     };
@@ -175,7 +209,14 @@ async function parseJson(request: Request) {
 
 async function invoke(routine: Routine, run: RoutineRun) {
   try {
-    run.output = await invokeAgent(routine.agentId, `routine:${routine.id}`, run.id, [{ role: "user", content: routine.prompt }]);
+    const prior = routine.memory ?? [];
+    const current = { role: "user" as const, content: routine.prompt };
+    run.output = await invokeAgent(routine.agentId, `routine:${routine.id}`, run.id, [...prior, current]);
+    routine.memory = boundedMemory([
+      ...prior,
+      current,
+      { role: "assistant" as const, content: run.output },
+    ]);
     run.status = "succeeded";
     run.finishedAt = now();
   } catch (error) {
@@ -228,6 +269,8 @@ async function runRoutine(routine: Routine) {
   const finished = await readStore();
   const savedRun = finished.runs.find((item) => item.id === run.id);
   if (savedRun) Object.assign(savedRun, run);
+  const savedRoutine = finished.routines.find((item) => item.id === routine.id);
+  if (savedRoutine && routine.memory) savedRoutine.memory = routine.memory;
   await saveStore(finished);
   console.info(JSON.stringify({ type: "routine-run", routineId: routine.id, runId: run.id, status: run.status }));
 }
