@@ -59,6 +59,10 @@ const backgroundTools = [
   { type: "function", name: "computer_type", description: "Type into a control using its ref and snapshotId from the latest snapshot.", parameters: { type: "object", properties: { ref: { type: "string" }, snapshotId: { type: "number" }, text: { type: "string" }, submit: { type: "boolean" } }, required: ["ref", "snapshotId", "text"], additionalProperties: false } },
   { type: "function", name: "computer_key", description: "Press a key on the assigned MONOCER computer.", parameters: { type: "object", properties: { key: { type: "string" }, ref: { type: "string" }, snapshotId: { type: "number" } }, required: ["key"], additionalProperties: false } },
   { type: "function", name: "computer_scroll", description: "Scroll the assigned MONOCER computer vertically.", parameters: { type: "object", properties: { deltaY: { type: "number" } }, additionalProperties: false } },
+  { type: "function", name: "computer_screenshot", description: "Capture the current assigned computer screen for visual inspection.", parameters: { type: "object", properties: {}, additionalProperties: false } },
+  { type: "function", name: "computer_list_files", description: "List files in the assigned computer workspace.", parameters: { type: "object", properties: { path: { type: "string" } }, additionalProperties: false } },
+  { type: "function", name: "computer_read_file", description: "Read a text file from the assigned computer workspace.", parameters: { type: "object", properties: { path: { type: "string" } }, required: ["path"], additionalProperties: false } },
+  { type: "function", name: "computer_write_file", description: "Write a text file to the assigned computer workspace.", parameters: { type: "object", properties: { path: { type: "string" }, contents: { type: "string" }, append: { type: "boolean" } }, required: ["path", "contents"], additionalProperties: false } },
 ] as const;
 
 type BackgroundMessage = { role: "user" | "assistant" | "tool"; content: string; toolCallId?: string; toolCalls?: Array<{ id: string; type: "function"; function: { name: string; arguments: string } }> };
@@ -66,7 +70,7 @@ type BackgroundToolCall = { id: string; name: string; arguments: Record<string, 
 
 async function runComputerTool(agentId: string, call: BackgroundToolCall) {
   const routes: Record<string, { method: string; path: string }> = {
-    computer_navigate: { method: "POST", path: "/navigate" }, computer_read: { method: "GET", path: "/read" }, computer_snapshot: { method: "POST", path: "/snapshot" }, computer_click: { method: "POST", path: "/click" }, computer_type: { method: "POST", path: "/type" }, computer_key: { method: "POST", path: "/key" }, computer_scroll: { method: "POST", path: "/scroll" },
+    computer_navigate: { method: "POST", path: "/navigate" }, computer_read: { method: "GET", path: "/read" }, computer_snapshot: { method: "POST", path: "/snapshot" }, computer_click: { method: "POST", path: "/click" }, computer_type: { method: "POST", path: "/type" }, computer_key: { method: "POST", path: "/key" }, computer_scroll: { method: "POST", path: "/scroll" }, computer_screenshot: { method: "GET", path: "/screenshot" }, computer_list_files: { method: "POST", path: "/files/list" }, computer_read_file: { method: "POST", path: "/files/read" }, computer_write_file: { method: "POST", path: "/files/write" },
   };
   const route = routes[call.name];
   if (!route) return { ok: false, error: `Unsupported background tool: ${call.name}` };
