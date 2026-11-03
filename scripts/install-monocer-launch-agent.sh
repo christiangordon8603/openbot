@@ -70,7 +70,7 @@ cat > "$CODEX_PLIST" <<EOF
   </dict>
   <key>RunAtLoad</key><true/>
   <key>KeepAlive</key><true/>
-  <key>ProcessType</key><string>Background</string>
+  <key>ProcessType</key><string>Interactive</string>
   <key>ThrottleInterval</key><integer>10</integer>
   <key>StandardOutPath</key><string>$ROOT/.logs/codex-bridge.log</string>
   <key>StandardErrorPath</key><string>$ROOT/.logs/codex-bridge.log</string>
@@ -98,7 +98,7 @@ cat > "$ROUTINES_PLIST" <<EOF
   </dict>
   <key>RunAtLoad</key><true/>
   <key>KeepAlive</key><true/>
-  <key>ProcessType</key><string>Background</string>
+  <key>ProcessType</key><string>Interactive</string>
   <key>ThrottleInterval</key><integer>10</integer>
   <key>StandardOutPath</key><string>$ROOT/.logs/routines.log</string>
   <key>StandardErrorPath</key><string>$ROOT/.logs/routines.log</string>
