@@ -101,6 +101,10 @@ That installs a per-user macOS LaunchAgent. It does not expose any service beyon
 does not make the stack continue while the Mac is powered off; that requires moving the same Docker
 volumes and processes to a remote Linux host.
 
+The LaunchAgent runs the MONOCER watchdog. It keeps the job alive after sign-in and checks the local
+Codex bridge, routines service, and dashboard every 20 seconds. If one stops answering, it invokes
+the idempotent startup script to recover the local stack.
+
 This is the zero-cost local-cloud phase: the Linux computer runs inside Colima/Docker on the Mac.
 Moving it to a remote Linux host later is a deployment change, not an agent rewrite, provided the
 host keeps the same private network and persistent volumes.

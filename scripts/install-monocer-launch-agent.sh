@@ -22,7 +22,7 @@ cat > "$PLIST" <<EOF
   <key>ProgramArguments</key>
   <array>
     <string>/bin/bash</string>
-    <string>$ROOT/scripts/start.sh</string>
+    <string>$ROOT/scripts/monocer-watchdog.sh</string>
   </array>
   <key>EnvironmentVariables</key>
   <dict>
@@ -32,7 +32,11 @@ cat > "$PLIST" <<EOF
   <key>RunAtLoad</key>
   <true/>
   <key>KeepAlive</key>
-  <false/>
+  <true/>
+  <key>ProcessType</key>
+  <string>Background</string>
+  <key>ThrottleInterval</key>
+  <integer>10</integer>
   <key>AbandonProcessGroup</key>
   <true/>
   <key>StandardOutPath</key>
