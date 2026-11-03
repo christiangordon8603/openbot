@@ -297,10 +297,9 @@ describe("tenant YAML validation", () => {
       roleDescription:
         "Help with everyday work using clear, concise, and accurate answers.",
       avatarSeed: "general-assistant",
-      type: "built_in",
+      type: "remote_ag_ui",
       configuration: {
-        systemPrompt:
-          "You are a helpful general assistant. Give clear, concise, and accurate answers.",
+        endpoint: "http://127.0.0.1:4203/ag-ui",
       },
     });
     expect(tenantPackage.channels).toContainEqual({

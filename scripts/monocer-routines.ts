@@ -2,7 +2,7 @@
  * MONOCER's local background routine runner.
  *
  * This is deliberately a small, dependency-free process. Routines are durable JSON records on the
- * local machine, and each run goes through the same authenticated AG-UI Claude bridge as a chat
+ * local machine, and each run goes through the same authenticated AG-UI Codex bridge as a chat
  * turn. The service is loopback-only and therefore is an operator surface, not a public endpoint.
  */
 
@@ -114,7 +114,7 @@ async function parseJson(request: Request) {
 async function invoke(routine: Routine, run: RoutineRun) {
   if (!agentEndpoint || !agentToken) {
     run.status = "failed";
-    run.error = "The Claude bridge is not configured.";
+    run.error = "The Codex bridge is not configured.";
     run.finishedAt = now();
     return;
   }
@@ -140,7 +140,7 @@ async function invoke(routine: Routine, run: RoutineRun) {
       }),
       signal: AbortSignal.timeout(10 * 60_000),
     });
-    if (!response.ok) throw new Error(`Claude bridge returned ${response.status}.`);
+    if (!response.ok) throw new Error(`Codex bridge returned ${response.status}.`);
 
     const body = await response.text();
     const output: string[] = [];
@@ -167,7 +167,7 @@ async function invoke(routine: Routine, run: RoutineRun) {
 async function invokeHandoff(handoff: Handoff) {
   if (!agentEndpoint || !agentToken) {
     handoff.status = "failed";
-    handoff.error = "The Claude bridge is not configured.";
+    handoff.error = "The Codex bridge is not configured.";
     handoff.finishedAt = now();
     return;
   }
@@ -203,7 +203,7 @@ async function invokeHandoff(handoff: Handoff) {
       }),
       signal: AbortSignal.timeout(10 * 60_000),
     });
-    if (!response.ok) throw new Error(`Claude bridge returned ${response.status}.`);
+    if (!response.ok) throw new Error(`Codex bridge returned ${response.status}.`);
     const body = await response.text();
     const output: string[] = [];
     for (const line of body.split("\n")) {

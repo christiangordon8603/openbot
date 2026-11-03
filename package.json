@@ -7,7 +7,11 @@
   "workspaces": [
     "app",
     "server",
-    "worker"
+    "worker",
+    "agent-bot",
+    "agent-langgraph",
+    "agent-claude",
+    "agent-codex"
   ],
   "scripts": {
     "build": "bun run generate:app-config && bun run --filter '*' build",

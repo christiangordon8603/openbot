@@ -30,6 +30,7 @@ SERVER_PORT="$(setting SERVER_PORT 3001)"
 COMPUTER_PORT="$(setting COMPUTER_PORT 4100)"
 BOT_PORT="$(setting BOT_PORT 4200)"
 LANGGRAPH_PORT="$(setting LANGGRAPH_PORT 4201)"
+CODEX_BRIDGE_PORT="$(setting CODEX_BRIDGE_PORT 4203)"
 SUPERVISOR_PORT="$(setting SUPERVISOR_PORT 4500)"
 ROUTINES_PORT="$(setting ROUTINES_PORT 4400)"
 ONE_COMPUTER_EACH="${OPENBOT_ONE_COMPUTER_EACH:-true}"
@@ -46,10 +47,11 @@ COMPUTER_TOKEN="$(setting COMPUTER_TOKEN openbot-dev-computer-token)"
 #
 # Written into .env rather than exported for this run alone, so `docker compose up` by hand later
 # sees the same value the script used.
-# The laptop stack runs agent-langgraph on LANGGRAPH_PORT. The one-container image does not, so
-# this default stays in the script rather than in .env: a `docker run --env-file .env` must not
-# inherit a URL that points at a process the image does not contain.
-MANAGED_AGENT_AG_UI_URL="$(setting MANAGED_AGENT_AG_UI_URL "http://localhost:${LANGGRAPH_PORT}/ag-ui")"
+# The laptop stack uses the signed-in Codex bridge by default. The one-container image does not
+# carry a host bridge, so this default stays in the script rather than in .env: a
+# `docker run --env-file .env` must not inherit a URL that points at a process the image does not
+# contain.
+MANAGED_AGENT_AG_UI_URL="$(setting MANAGED_AGENT_AG_UI_URL "http://localhost:${CODEX_BRIDGE_PORT}/ag-ui")"
 export MANAGED_AGENT_AG_UI_URL
 
 # Whether this run minted a secret that something already running may not have.
@@ -148,9 +150,9 @@ if [ "$ONE_COMPUTER_EACH" = "true" ]; then
   SERVICES+=(supervisor)
 fi
 #
-# The MONOCER profile uses the signed-in Claude bridge on the host. The stock Qwen-backed Bot
+# The MONOCER profile uses the signed-in Codex bridge on the host. The stock Qwen-backed Bot
 # containers remain available in docker-compose for the upstream example, but are deliberately not
-# started here so a Claude-only deployment does not depend on a local model.
+# started here so a Codex subscription deployment does not depend on a local model.
 #
 # This used to skip one that answered its health route, which sounds like an optimisation and is
 # actually a correctness bug: answering says the process is alive, not that its environment still

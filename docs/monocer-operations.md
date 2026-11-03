@@ -15,7 +15,7 @@ This local profile turns OpenBot into the MONOCER operating layer: a branded con
 
 ## Agency lanes
 
-The dashboard reserves seven operating lanes so the existing Claude-built specialists can be connected without changing the MONOCER surface:
+The dashboard reserves seven operating lanes so the existing agency specialists can be connected without changing the MONOCER surface:
 
 1. Strategy
 2. Creative

@@ -39,7 +39,7 @@ test("publishes every service on a settable port with the documented default", (
 });
 
 /**
- * Both Bots are reachable at whatever `OPENAI_BASE_URL` names.
+ * Both shipped model containers are reachable at their configured OpenAI-compatible endpoints.
  *
  * The API server reads that variable from `.env` directly, so it moves with the deployment. The
  * Bots run in containers and see only what compose hands them, and a deployment that moved its
@@ -51,10 +51,10 @@ test("gives both shipped Bots the OpenAI-compatible endpoint", () => {
     "utf8",
   );
 
-  // Both Bots speak OpenAI; only the framework Bot can be pointed at the other two.
-  expect(
-    compose.match(/OPENAI_BASE_URL: \$\{OPENAI_BASE_URL:-?\}/g),
-  ).toHaveLength(2);
+  // Each container has an independent override so a local deployment can route the two examples
+  // to different gateways while preserving the documented local-model defaults.
+  expect(compose).toContain("OPENAI_BASE_URL: ${AGENT_BOT_OPENAI_BASE_URL:-");
+  expect(compose).toContain("OPENAI_BASE_URL: ${AGENT_LANGGRAPH_OPENAI_BASE_URL:-");
   for (const variable of [
     "ANTHROPIC_BASE_URL",
     "GOOGLE_GENERATIVE_AI_BASE_URL",

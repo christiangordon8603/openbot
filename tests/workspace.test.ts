@@ -18,11 +18,22 @@ describe("OpenBot workspace", () => {
       readFileSync(join(repositoryRoot, "package.json"), "utf8"),
     ) as { workspaces: string[] };
 
-    expect(rootManifest.workspaces).toEqual(["app", "server", "worker"]);
+    expect(rootManifest.workspaces).toEqual([
+      "app",
+      "server",
+      "worker",
+      "agent-bot",
+      "agent-langgraph",
+      "agent-claude",
+      "agent-codex",
+    ]);
 
     for (const packageName of rootManifest.workspaces) {
       expect(existsSync(join(repositoryRoot, packageName))).toBe(true);
-      expect(packageManifest(packageName).name).toBe(packageName);
+      const expectedName = packageName.startsWith("agent-")
+        ? `@openbot/${packageName}`
+        : packageName;
+      expect(packageManifest(packageName).name).toBe(expectedName);
     }
   });
 });
