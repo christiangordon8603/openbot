@@ -26,7 +26,7 @@ cat > "$PLIST" <<EOF
   <key>RunAtLoad</key>
   <true/>
   <key>KeepAlive</key>
-  <true/>
+  <false/>
   <key>StandardOutPath</key>
   <string>$ROOT/.logs/launch-agent.log</string>
   <key>StandardErrorPath</key>
