@@ -336,7 +336,9 @@ describe("channel activity", () => {
 
     await store.recordActivity(owner, busy.id, {
       agentId,
-      at: new Date(),
+      // Keep the activity unambiguously newer than the two database-created timestamps. The
+      // assertion is about recency, not about which clock wins when both values land together.
+      at: new Date(Date.now() + 1_000),
       text: "Said something.",
     });
 
