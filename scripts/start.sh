@@ -174,7 +174,17 @@ done
 export SUPERVISOR_TOKEN COMPUTER_TOKEN
 export COMPUTER_PORT BOT_PORT LANGGRAPH_PORT SUPERVISOR_PORT ROUTINES_PORT
 docker compose up -d --build "${SERVICES[@]}" >/dev/null
-if ! docker compose run --rm --build migrate >"$LOGS/migrate.log" 2>&1; then
+# The image is built by the first interactive setup when it is missing. Rebuilding it on every
+# macOS login makes launchd wait on Docker's build stream for minutes and can leave the login job
+# wedged after the image has already completed successfully.
+if ! docker compose images -q migrate | grep -q .; then
+  if ! docker compose build migrate >"$LOGS/migrate-build.log" 2>&1; then
+    red "  The migration image did not build."
+    red "  Log: $LOGS/migrate-build.log"
+    exit 1
+  fi
+fi
+if ! docker compose run --rm migrate >"$LOGS/migrate.log" 2>&1; then
   red "  Migrations did not apply. The database is not the schema this server expects."
   red "  Log: $LOGS/migrate.log"
   exit 1
