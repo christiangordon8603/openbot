@@ -55,6 +55,7 @@ type Mission = {
   task: string;
   agentIds: string[];
   synthesisAgentId: string;
+  allowLeadTools: boolean;
   status: "running" | "succeeded" | "partial" | "failed";
   createdAt: string;
   finishedAt?: string;
@@ -326,12 +327,14 @@ async function runMission(mission: Mission) {
           content: [
             `You are the lead ${mission.synthesisAgentId} lane for a MONOCER mission.`,
             "Synthesize the specialist findings into one decisive answer.",
-            "Call out disagreement or missing evidence, then give prioritized next actions. Do not mention internal orchestration unless it helps explain a limitation.",
+            mission.allowLeadTools
+              ? "Use the MONOCER computer tools when they are needed to complete the task. Act only through the lead lane, verify consequential results, and report what you actually changed or observed."
+              : "Call out disagreement or missing evidence, then give prioritized next actions. Do not mention internal orchestration unless it helps explain a limitation.",
             `Original task:\n${mission.task}`,
             `Specialist findings:\n${evidence}`,
           ].join("\n\n"),
         }],
-        [],
+        mission.allowLeadTools ? backgroundTools : [],
       );
     } catch (error) {
       mission.error = error instanceof Error ? error.message : String(error);
@@ -417,7 +420,7 @@ const server = Bun.serve({
         : [];
       const synthesisAgentId = safeId(input?.synthesisAgentId) ?? agentIds[0];
       if (!task || agentIds.length === 0 || !synthesisAgentId) return json({ error: "task, at least one agentId, and synthesisAgentId are required." }, 400);
-      const mission: Mission = { id: `mission_${crypto.randomUUID()}`, task, agentIds, synthesisAgentId, status: "running", createdAt: now(), results: [] };
+      const mission: Mission = { id: `mission_${crypto.randomUUID()}`, task, agentIds, synthesisAgentId, allowLeadTools: input?.allowLeadTools === true, status: "running", createdAt: now(), results: [] };
       const store = await readStore();
       store.missions.push(mission);
       await saveStore(store);

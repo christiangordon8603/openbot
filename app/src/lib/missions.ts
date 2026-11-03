@@ -10,6 +10,7 @@ export type Mission = {
   task: string;
   agentIds: string[];
   synthesisAgentId: string;
+  allowLeadTools: boolean;
   status: "running" | "succeeded" | "partial" | "failed";
   createdAt: string;
   finishedAt?: string;
@@ -35,6 +36,7 @@ export async function createMission(input: {
   task: string;
   agentIds: string[];
   synthesisAgentId: string;
+  allowLeadTools: boolean;
 }): Promise<{ mission: Mission }> {
   const response = await fetch(`${endpoint()}/missions`, {
     method: "POST",
