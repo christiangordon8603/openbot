@@ -206,21 +206,21 @@ wait_for_reachable "http://127.0.0.1:${MONOCER_DESKTOP_PORT:-6080}/" "monocer-li
 CLAUDE_BRIDGE_LOG="$LOGS/claude-bridge.log"
 CLAUDE_BRIDGE_PID="$LOGS/claude-bridge.pid"
 if ! curl -fsS --max-time 3 "http://127.0.0.1:${CLAUDE_BRIDGE_PORT:-4202}/health" >/dev/null 2>&1; then
-  (cd "$ROOT/agent-claude" && PORT="${CLAUDE_BRIDGE_PORT:-4202}" bun --env-file=../.env src/index.ts >>"$CLAUDE_BRIDGE_LOG" 2>&1 & echo $! >"$CLAUDE_BRIDGE_PID")
+  (cd "$ROOT/agent-claude" && nohup env PORT="${CLAUDE_BRIDGE_PORT:-4202}" bun --env-file=../.env src/index.ts >>"$CLAUDE_BRIDGE_LOG" 2>&1 </dev/null & echo $! >"$CLAUDE_BRIDGE_PID")
 fi
 wait_for "http://127.0.0.1:${CLAUDE_BRIDGE_PORT:-4202}/health" "claude-bridge"
 
 CODEX_BRIDGE_LOG="$LOGS/codex-bridge.log"
 CODEX_BRIDGE_PID="$LOGS/codex-bridge.pid"
 if ! curl -fsS --max-time 3 "http://127.0.0.1:${CODEX_BRIDGE_PORT:-4203}/health" >/dev/null 2>&1; then
-  (cd "$ROOT/agent-codex" && PORT="${CODEX_BRIDGE_PORT:-4203}" bun --env-file=../.env src/index.ts >>"$CODEX_BRIDGE_LOG" 2>&1 & echo $! >"$CODEX_BRIDGE_PID")
+  (cd "$ROOT/agent-codex" && nohup env PORT="${CODEX_BRIDGE_PORT:-4203}" bun --env-file=../.env src/index.ts >>"$CODEX_BRIDGE_LOG" 2>&1 </dev/null & echo $! >"$CODEX_BRIDGE_PID")
 fi
 wait_for "http://127.0.0.1:${CODEX_BRIDGE_PORT:-4203}/health" "codex-bridge"
 
 ROUTINES_LOG="$LOGS/routines.log"
 if ! curl -fsS --max-time 3 "http://127.0.0.1:$ROUTINES_PORT/health" >/dev/null 2>&1; then
-  (ROUTINES_PORT="$ROUTINES_PORT" ROUTINES_FILE="$ROOT/.data/monocer-routines.json" \
-    bun "$ROOT/scripts/monocer-routines.ts" >>"$ROUTINES_LOG" 2>&1 &)
+  (nohup env ROUTINES_PORT="$ROUTINES_PORT" ROUTINES_FILE="$ROOT/.data/monocer-routines.json" \
+    bun "$ROOT/scripts/monocer-routines.ts" >>"$ROUTINES_LOG" 2>&1 </dev/null &)
 fi
 wait_for "http://127.0.0.1:$ROUTINES_PORT/health" "routines"
 
@@ -289,9 +289,9 @@ if ! curl -fsS --max-time 3 "http://localhost:$SERVER_PORT/api/capabilities" >/d
       COMPUTER_SUPERVISOR_URL="http://localhost:$SUPERVISOR_PORT" \
       SUPERVISOR_TOKEN="$SUPERVISOR_TOKEN" \
       COMPUTER_TOKEN="$COMPUTER_TOKEN" \
-      bun --env-file=../.env src/index.ts >"$LOGS/server.log" 2>&1 &)
+      nohup bun --env-file=../.env src/index.ts >"$LOGS/server.log" 2>&1 </dev/null &)
   else
-    (cd server && PORT="$SERVER_PORT" APP_DIST_DIR="../app/dist" bun --env-file=../.env src/index.ts >"$LOGS/server.log" 2>&1 &)
+    (cd server && PORT="$SERVER_PORT" APP_DIST_DIR="../app/dist" nohup bun --env-file=../.env src/index.ts >"$LOGS/server.log" 2>&1 </dev/null &)
   fi
 fi
 wait_for "http://localhost:$SERVER_PORT/api/capabilities" "server"
@@ -316,7 +316,7 @@ PY
 info "4/4  App"
 require_free_or_ours "$APP_PORT" app
 if ! curl -fsS --max-time 3 "http://localhost:$APP_PORT/" >/dev/null 2>&1; then
-  (cd app && bun run dev --port "$APP_PORT" --strictPort >"$LOGS/app.log" 2>&1 &)
+  (cd app && nohup bun run dev --port "$APP_PORT" --strictPort >"$LOGS/app.log" 2>&1 </dev/null &)
 fi
 wait_for "http://localhost:$APP_PORT/" "app"
 
