@@ -9,12 +9,23 @@ healthy() {
   curl -fsS --max-time 3 "$1" >/dev/null 2>&1
 }
 
+run_full_start() {
+  local lock="$LOGS/full-start.lock"
+  if ! mkdir "$lock" 2>/dev/null; then
+    return 0
+  fi
+  trap 'rmdir "$LOGS/full-start.lock" 2>/dev/null || true' RETURN
+  "$ROOT/scripts/start.sh" >>"$LOGS/watchdog.log" 2>&1 || true
+  rmdir "$lock" 2>/dev/null || true
+  trap - RETURN
+}
+
 while true; do
   # A server/container outage needs the full idempotent startup path. Host bridges and the
   # dashboard have cheaper direct restarts; rebuilding Docker for a crashed bridge made recovery
   # take minutes even though the computer stack was still healthy.
   if ! healthy "http://127.0.0.1:${SERVER_PORT:-3001}/api/capabilities"; then
-    "$ROOT/scripts/start.sh" >>"$LOGS/watchdog.log" 2>&1 || true
+    run_full_start
   fi
 
   if ! healthy "http://127.0.0.1:${CODEX_BRIDGE_PORT:-4203}/health"; then
