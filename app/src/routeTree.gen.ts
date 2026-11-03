@@ -17,6 +17,7 @@ import { Route as AuthedSettingsRouteRouteImport } from './routes/_authed/settin
 import { Route as AuthedAppIndexRouteImport } from './routes/_authed/_app/index'
 import { Route as AuthedAppBotRouteImport } from './routes/_authed/_app/bot'
 import { Route as AuthedAppHandoffsRouteImport } from './routes/_authed/_app/handoffs'
+import { Route as AuthedAppMissionsRouteImport } from './routes/_authed/_app/missions'
 import { Route as AuthedAppRoutinesRouteImport } from './routes/_authed/_app/routines'
 import { Route as AuthedAppSkillsRouteImport } from './routes/_authed/_app/skills'
 import { Route as AuthedAdminIndexRouteImport } from './routes/_authed/admin/index'
@@ -78,6 +79,11 @@ const AuthedAppBotRoute = AuthedAppBotRouteImport.update({
 const AuthedAppHandoffsRoute = AuthedAppHandoffsRouteImport.update({
   id: '/handoffs',
   path: '/handoffs',
+  getParentRoute: () => AuthedAppRoute,
+} as any)
+const AuthedAppMissionsRoute = AuthedAppMissionsRouteImport.update({
+  id: '/missions',
+  path: '/missions',
   getParentRoute: () => AuthedAppRoute,
 } as any)
 const AuthedAppRoutinesRoute = AuthedAppRoutinesRouteImport.update({
@@ -217,6 +223,7 @@ export interface FileRoutesByFullPath {
   '/settings': typeof AuthedSettingsRouteRouteWithChildren
   '/bot': typeof AuthedAppBotRoute
   '/handoffs': typeof AuthedAppHandoffsRoute
+  '/missions': typeof AuthedAppMissionsRoute
   '/routines': typeof AuthedAppRoutinesRoute
   '/skills': typeof AuthedAppSkillsRoute
   '/admin/audit': typeof AuthedAdminAuditRoute
@@ -247,6 +254,7 @@ export interface FileRoutesByTo {
   '/sign': typeof SignRoute
   '/bot': typeof AuthedAppBotRoute
   '/handoffs': typeof AuthedAppHandoffsRoute
+  '/missions': typeof AuthedAppMissionsRoute
   '/routines': typeof AuthedAppRoutinesRoute
   '/skills': typeof AuthedAppSkillsRoute
   '/admin/audit': typeof AuthedAdminAuditRoute
@@ -281,6 +289,7 @@ export interface FileRoutesById {
   '/_authed/_app': typeof AuthedAppRouteWithChildren
   '/_authed/_app/bot': typeof AuthedAppBotRoute
   '/_authed/_app/handoffs': typeof AuthedAppHandoffsRoute
+  '/_authed/_app/missions': typeof AuthedAppMissionsRoute
   '/_authed/_app/routines': typeof AuthedAppRoutinesRoute
   '/_authed/_app/skills': typeof AuthedAppSkillsRoute
   '/_authed/admin/audit': typeof AuthedAdminAuditRoute
@@ -316,6 +325,7 @@ export interface FileRouteTypes {
     | '/settings'
     | '/bot'
     | '/handoffs'
+    | '/missions'
     | '/routines'
     | '/skills'
     | '/admin/audit'
@@ -346,6 +356,7 @@ export interface FileRouteTypes {
     | '/sign'
     | '/bot'
     | '/handoffs'
+    | '/missions'
     | '/routines'
     | '/skills'
     | '/admin/audit'
@@ -379,6 +390,7 @@ export interface FileRouteTypes {
     | '/_authed/_app'
     | '/_authed/_app/bot'
     | '/_authed/_app/handoffs'
+    | '/_authed/_app/missions'
     | '/_authed/_app/routines'
     | '/_authed/_app/skills'
     | '/_authed/admin/audit'
@@ -467,6 +479,13 @@ declare module '@tanstack/react-router' {
       path: '/handoffs'
       fullPath: '/handoffs'
       preLoaderRoute: typeof AuthedAppHandoffsRouteImport
+      parentRoute: typeof AuthedAppRoute
+    }
+    '/_authed/_app/missions': {
+      id: '/_authed/_app/missions'
+      path: '/missions'
+      fullPath: '/missions'
+      preLoaderRoute: typeof AuthedAppMissionsRouteImport
       parentRoute: typeof AuthedAppRoute
     }
     '/_authed/_app/routines': {
@@ -703,6 +722,7 @@ const AuthedSettingsRouteRouteWithChildren =
 interface AuthedAppRouteChildren {
   AuthedAppBotRoute: typeof AuthedAppBotRoute
   AuthedAppHandoffsRoute: typeof AuthedAppHandoffsRoute
+  AuthedAppMissionsRoute: typeof AuthedAppMissionsRoute
   AuthedAppRoutinesRoute: typeof AuthedAppRoutinesRoute
   AuthedAppSkillsRoute: typeof AuthedAppSkillsRoute
   AuthedAppIndexRoute: typeof AuthedAppIndexRoute
@@ -714,6 +734,7 @@ interface AuthedAppRouteChildren {
 const AuthedAppRouteChildren: AuthedAppRouteChildren = {
   AuthedAppBotRoute: AuthedAppBotRoute,
   AuthedAppHandoffsRoute: AuthedAppHandoffsRoute,
+  AuthedAppMissionsRoute: AuthedAppMissionsRoute,
   AuthedAppRoutinesRoute: AuthedAppRoutinesRoute,
   AuthedAppSkillsRoute: AuthedAppSkillsRoute,
   AuthedAppIndexRoute: AuthedAppIndexRoute,
