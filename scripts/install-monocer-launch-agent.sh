@@ -33,6 +33,8 @@ cat > "$PLIST" <<EOF
   <true/>
   <key>KeepAlive</key>
   <false/>
+  <key>AbandonProcessGroup</key>
+  <true/>
   <key>StandardOutPath</key>
   <string>$ROOT/.logs/launch-agent.log</string>
   <key>StandardErrorPath</key>
