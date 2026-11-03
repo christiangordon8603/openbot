@@ -51,7 +51,12 @@ launchctl bootout "gui/$(id -u)/$LABEL" 2>/dev/null || true
 # The launch agent deliberately abandons its service children, but an older watchdog is itself a
 # parent process and would otherwise survive a reinstall beside the new one. Boot it out first so
 # launchd has released the job before the preserved parent is cleaned up.
-for old_pid in $(pgrep -f "^/bin/bash $ROOT/scripts/monocer-watchdog.sh$" || true); do
+for old_pid in $(pgrep -f "(^|/)bash $ROOT/scripts/monocer-watchdog.sh$" || true); do
+  kill "$old_pid" 2>/dev/null || true
+done
+# AbandonProcessGroup keeps helper shells alive across a bootout. They are owned by this launch
+# agent, so clear only exact OpenBot startup helpers before bootstrapping the replacement.
+for old_pid in $(pgrep -f "(^|/)bash $ROOT/scripts/start.sh$" || true); do
   kill "$old_pid" 2>/dev/null || true
 done
 sleep 1
