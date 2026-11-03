@@ -17,7 +17,11 @@ const CODEX_EXECUTABLE = (() => {
     `${homedir()}/.local/bin/codex`,
     "/Applications/ChatGPT.app/Contents/Resources/codex-cli/CodexCLI.app/Contents/MacOS/codex",
   ].filter((candidate): candidate is string => Boolean(candidate));
-  return candidates.find((candidate) => candidate === "codex" || existsSync(candidate)) ?? "codex";
+  return (
+    candidates.find(
+      (candidate) => candidate === "codex" || existsSync(candidate),
+    ) ?? "codex"
+  );
 })();
 
 type ModelSummary = {
@@ -28,7 +32,8 @@ type ModelSummary = {
   visibility: string;
 };
 
-const CODEX_HOME = process.env.CODEX_HOME?.trim() || `${process.env.HOME ?? ""}/.codex`;
+const CODEX_HOME =
+  process.env.CODEX_HOME?.trim() || `${process.env.HOME ?? ""}/.codex`;
 const MODEL_CACHE_PATH = `${CODEX_HOME}/models_cache.codex_work_desktop.json`;
 
 async function loadModelCatalog(): Promise<ModelSummary[]> {
@@ -44,19 +49,35 @@ async function loadModelCatalog(): Promise<ModelSummary[]> {
         supportedInApi: model.supported_in_api !== false,
         visibility: String(model.visibility ?? "list"),
       }))
-      .filter((model) => model.slug && model.supportedInApi);
+      .filter(
+        (model) =>
+          model.slug && model.supportedInApi && model.visibility !== "hide",
+      );
   } catch {
     return CODEX_MODEL
-      ? [{ slug: CODEX_MODEL, displayName: CODEX_MODEL, description: "Active Codex model.", supportedInApi: true, visibility: "list" }]
+      ? [
+          {
+            slug: CODEX_MODEL,
+            displayName: CODEX_MODEL,
+            description: "Active Codex model.",
+            supportedInApi: true,
+            visibility: "list",
+          },
+        ]
       : [];
   }
 }
 
 async function resolveModel(input: RunAgentInput) {
-  const requested = String((input.forwardedProps as Record<string, unknown> | undefined)?.openbotModel ?? "").trim();
+  const requested = String(
+    (input.forwardedProps as Record<string, unknown> | undefined)
+      ?.openbotModel ?? "",
+  ).trim();
   if (!requested) return CODEX_MODEL;
   const catalog = await loadModelCatalog();
-  return catalog.some((model) => model.slug === requested) ? requested : CODEX_MODEL;
+  return catalog.some((model) => model.slug === requested)
+    ? requested
+    : CODEX_MODEL;
 }
 
 function corsHeaders(request: Request) {
@@ -99,7 +120,11 @@ function transcript(input: RunAgentInput) {
   return input.messages
     .map((message) => {
       const content = String(message.content ?? "");
-      if (message.role === "assistant" && "toolCalls" in message && message.toolCalls?.length) {
+      if (
+        message.role === "assistant" &&
+        "toolCalls" in message &&
+        message.toolCalls?.length
+      ) {
         const calls = message.toolCalls
           .map((call) => `${call.function.name}(${call.function.arguments})`)
           .join(", ");
@@ -197,12 +222,16 @@ async function runCodexOnce(
         }
         if (message.method === "turn/completed") {
           completed = true;
-          const status = (message.params?.turn as { status?: string } | undefined)?.status;
-          if (status && status !== "completed") finalError = `Codex turn ended with status: ${status}`;
+          const status = (
+            message.params?.turn as { status?: string } | undefined
+          )?.status;
+          if (status && status !== "completed")
+            finalError = `Codex turn ended with status: ${status}`;
           if (id === -1) return message;
         }
         if (message.id === id) return message;
-        if (message.error) finalError = message.error.message ?? "Codex app-server error";
+        if (message.error)
+          finalError = message.error.message ?? "Codex app-server error";
       }
     }
     return undefined;
@@ -220,7 +249,10 @@ async function runCodexOnce(
       },
     });
     const initialized = await waitFor(initializeId);
-    if (!initialized?.result) throw new Error(initialized?.error?.message ?? "Codex initialization failed");
+    if (!initialized?.result)
+      throw new Error(
+        initialized?.error?.message ?? "Codex initialization failed",
+      );
     await sendRpc(writer, { method: "initialized", params: {} });
 
     const threadRequestId = requestId++;
@@ -234,12 +266,16 @@ async function runCodexOnce(
         sandbox: "read-only",
         ephemeral: true,
         dynamicTools: inputTools,
-        baseInstructions: "You are the Codex-powered MONOCER agency assistant. Be practical, concise, and honest about what you can do. Do not claim browser or computer actions unless you have actually completed them.",
+        baseInstructions:
+          "You are the Codex-powered MONOCER agency assistant. Be practical, concise, and honest about what you can do. Do not claim browser or computer actions unless you have actually completed them.",
       },
     });
     const threadResponse = await waitFor(threadRequestId);
     threadId = String(threadResponse?.result?.thread?.id ?? "");
-    if (!threadId) throw new Error(threadResponse?.error?.message ?? "Codex did not create a thread");
+    if (!threadId)
+      throw new Error(
+        threadResponse?.error?.message ?? "Codex did not create a thread",
+      );
 
     const turnRequestId = requestId++;
     await sendRpc(writer, {
@@ -253,7 +289,8 @@ async function runCodexOnce(
       },
     });
     const turnResponse = await waitFor(turnRequestId);
-    if (turnResponse?.error) throw new Error(turnResponse.error.message ?? "Codex turn failed");
+    if (turnResponse?.error)
+      throw new Error(turnResponse.error.message ?? "Codex turn failed");
     while (!completed && !finalError) {
       await waitFor(-1);
       if (!completed && !finalError) {
@@ -263,7 +300,9 @@ async function runCodexOnce(
     if (finalError) throw new Error(finalError);
   } finally {
     signal?.removeEventListener("abort", abortChild);
-    try { writer.end(); } catch {}
+    try {
+      writer.end();
+    } catch {}
     child.kill();
     await child.exited;
   }
@@ -294,20 +333,36 @@ async function runCodex(
   try {
     return await runCodexOnce(prompt, model, inputTools, forward, signal);
   } catch (error) {
-    if (signal?.aborted || error instanceof ToolCallDelegated || emitted) throw error;
+    if (signal?.aborted || error instanceof ToolCallDelegated || emitted)
+      throw error;
+    // A signed-in desktop catalog can briefly advertise a model before the local app-server
+    // understands it. Keep the per-channel choice useful without turning that transient mismatch
+    // into a dead conversation: retry once on the configured default, but never replay after any
+    // visible answer or delegated computer action.
+    if (model && model !== CODEX_MODEL) {
+      return runCodexOnce(prompt, CODEX_MODEL, inputTools, onDelta, signal);
+    }
     return runCodexOnce(prompt, model, inputTools, onDelta, signal);
   }
 }
 
-async function runAgent(input: RunAgentInput, signal?: AbortSignal): Promise<Response> {
+async function runAgent(
+  input: RunAgentInput,
+  signal?: AbortSignal,
+): Promise<Response> {
   const encoder = new EventEncoder();
   const stream = new ReadableStream<Uint8Array>({
     async start(controller) {
       const utf8 = new TextEncoder();
-      const send = (event: BaseEvent) => controller.enqueue(utf8.encode(encoder.encodeSSE(event)));
+      const send = (event: BaseEvent) =>
+        controller.enqueue(utf8.encode(encoder.encodeSSE(event)));
       const messageId = `msg_${input.runId}`;
       let textStarted = false;
-      send({ type: "RUN_STARTED", threadId: input.threadId, runId: input.runId } as BaseEvent);
+      send({
+        type: "RUN_STARTED",
+        threadId: input.threadId,
+        runId: input.runId,
+      } as BaseEvent);
       try {
         const prompt = [
           "You are the Codex-powered MONOCER agency assistant.",
@@ -315,23 +370,43 @@ async function runAgent(input: RunAgentInput, signal?: AbortSignal): Promise<Res
           "If the conversation contains a TOOL RESULT, treat it as the result of a tool already executed by the MONOCER surface. Do not repeat that tool call unless the result explicitly says it failed or asks for a retry.",
           transcript(input),
         ].join("\n\n");
-        await runCodex(prompt, await resolveModel(input), input.tools.map((tool) => ({
-          type: "function" as const,
-          name: tool.name,
-          description: tool.description,
-          inputSchema: tool.parameters,
-        })), (delta) => {
-          if (!textStarted) {
-            send({ type: "TEXT_MESSAGE_START", messageId, role: "assistant" } as BaseEvent);
-            textStarted = true;
-          }
-          send({ type: "TEXT_MESSAGE_CONTENT", messageId, delta } as BaseEvent);
-        }, signal);
-        if (textStarted) send({ type: "TEXT_MESSAGE_END", messageId } as BaseEvent);
-        send({ type: "RUN_FINISHED", threadId: input.threadId, runId: input.runId } as BaseEvent);
+        await runCodex(
+          prompt,
+          await resolveModel(input),
+          input.tools.map((tool) => ({
+            type: "function" as const,
+            name: tool.name,
+            description: tool.description,
+            inputSchema: tool.parameters,
+          })),
+          (delta) => {
+            if (!textStarted) {
+              send({
+                type: "TEXT_MESSAGE_START",
+                messageId,
+                role: "assistant",
+              } as BaseEvent);
+              textStarted = true;
+            }
+            send({
+              type: "TEXT_MESSAGE_CONTENT",
+              messageId,
+              delta,
+            } as BaseEvent);
+          },
+          signal,
+        );
+        if (textStarted)
+          send({ type: "TEXT_MESSAGE_END", messageId } as BaseEvent);
+        send({
+          type: "RUN_FINISHED",
+          threadId: input.threadId,
+          runId: input.runId,
+        } as BaseEvent);
       } catch (error) {
         if (error instanceof ToolCallDelegated) {
-          if (textStarted) send({ type: "TEXT_MESSAGE_END", messageId } as BaseEvent);
+          if (textStarted)
+            send({ type: "TEXT_MESSAGE_END", messageId } as BaseEvent);
           send({
             type: "TOOL_CALL_START",
             toolCallId: error.call.id,
@@ -343,19 +418,35 @@ async function runAgent(input: RunAgentInput, signal?: AbortSignal): Promise<Res
             toolCallId: error.call.id,
             delta: JSON.stringify(error.call.arguments ?? {}),
           } as BaseEvent);
-          send({ type: "TOOL_CALL_END", toolCallId: error.call.id } as BaseEvent);
-          send({ type: "RUN_FINISHED", threadId: input.threadId, runId: input.runId } as BaseEvent);
+          send({
+            type: "TOOL_CALL_END",
+            toolCallId: error.call.id,
+          } as BaseEvent);
+          send({
+            type: "RUN_FINISHED",
+            threadId: input.threadId,
+            runId: input.runId,
+          } as BaseEvent);
           return;
         }
-        if (textStarted) send({ type: "TEXT_MESSAGE_END", messageId } as BaseEvent);
-        send({ type: "RUN_ERROR", message: error instanceof Error ? error.message : "Codex could not answer." } as BaseEvent);
+        if (textStarted)
+          send({ type: "TEXT_MESSAGE_END", messageId } as BaseEvent);
+        send({
+          type: "RUN_ERROR",
+          message:
+            error instanceof Error ? error.message : "Codex could not answer.",
+        } as BaseEvent);
       } finally {
         controller.close();
       }
     },
   });
   return new Response(stream, {
-    headers: { "content-type": encoder.getContentType(), "cache-control": "no-cache", connection: "keep-alive" },
+    headers: {
+      "content-type": encoder.getContentType(),
+      "cache-control": "no-cache",
+      connection: "keep-alive",
+    },
   });
 }
 
@@ -365,7 +456,11 @@ Bun.serve({
     const url = new URL(request.url);
     if (url.pathname === "/health") {
       return new Response(
-        JSON.stringify({ status: "ok", model: CODEX_MODEL ?? "configured", auth: "codex-chatgpt" }),
+        JSON.stringify({
+          status: "ok",
+          model: CODEX_MODEL ?? "configured",
+          auth: "codex-chatgpt",
+        }),
         {
           headers: {
             "content-type": "application/json",
@@ -376,15 +471,19 @@ Bun.serve({
     }
     if (url.pathname === "/models") {
       const models = await loadModelCatalog();
-      return new Response(JSON.stringify({ activeModel: CODEX_MODEL ?? null, models }), {
-        headers: {
-          "content-type": "application/json",
-          ...corsHeaders(request),
+      return new Response(
+        JSON.stringify({ activeModel: CODEX_MODEL ?? null, models }),
+        {
+          headers: {
+            "content-type": "application/json",
+            ...corsHeaders(request),
+          },
         },
-      });
+      );
     }
     if (url.pathname === "/ag-ui" && request.method === "POST") {
-      if (!hasManagedAgentToken(request, MANAGED_AGENT_TOKEN)) return Response.json({ error: "Unauthorized." }, { status: 401 });
+      if (!hasManagedAgentToken(request, MANAGED_AGENT_TOKEN))
+        return Response.json({ error: "Unauthorized." }, { status: 401 });
       return runAgent((await request.json()) as RunAgentInput, request.signal);
     }
     return Response.json({ error: "Not found." }, { status: 404 });
