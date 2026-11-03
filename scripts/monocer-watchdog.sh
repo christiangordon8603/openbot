@@ -4,6 +4,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 LOGS="$ROOT/.logs"
 mkdir -p "$LOGS"
+BUN_EXECUTABLE="${BUN_EXECUTABLE:-$(command -v bun || printf '%s' /opt/homebrew/bin/bun)}"
 
 healthy() {
   curl -fsS --max-time 3 "$1" >/dev/null 2>&1
@@ -55,11 +56,11 @@ while true; do
   fi
 
   if ! healthy "http://127.0.0.1:${CODEX_BRIDGE_PORT:-4203}/health"; then
-    (cd "$ROOT/agent-codex" && exec env PORT="${CODEX_BRIDGE_PORT:-4203}" bun --env-file=../.env src/index.ts) >>"$LOGS/codex-bridge.log" 2>&1 </dev/null &
+    (cd "$ROOT/agent-codex" && nohup env PORT="${CODEX_BRIDGE_PORT:-4203}" "$BUN_EXECUTABLE" --env-file=../.env src/index.ts) >>"$LOGS/codex-bridge.log" 2>&1 </dev/null &
   fi
   if ! healthy "http://127.0.0.1:${ROUTINES_PORT:-4400}/health"; then
     (exec env ROUTINES_PORT="${ROUTINES_PORT:-4400}" ROUTINES_FILE="$ROOT/.data/monocer-routines.json" \
-      bun "$ROOT/scripts/monocer-routines.ts") >>"$LOGS/routines.log" 2>&1 </dev/null &
+      nohup "$BUN_EXECUTABLE" "$ROOT/scripts/monocer-routines.ts") >>"$LOGS/routines.log" 2>&1 </dev/null &
   fi
   if ! healthy "http://127.0.0.1:${APP_PORT:-3001}/"; then
     (cd "$ROOT/app" && exec bun run dev --port "${APP_PORT:-3001}" --strictPort) >>"$LOGS/app.log" 2>&1 </dev/null &
