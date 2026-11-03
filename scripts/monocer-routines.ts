@@ -63,6 +63,7 @@ const backgroundTools = [
   { type: "function", name: "computer_list_files", description: "List files in the assigned computer workspace.", parameters: { type: "object", properties: { path: { type: "string" } }, additionalProperties: false } },
   { type: "function", name: "computer_read_file", description: "Read a text file from the assigned computer workspace.", parameters: { type: "object", properties: { path: { type: "string" } }, required: ["path"], additionalProperties: false } },
   { type: "function", name: "computer_write_file", description: "Write a text file to the assigned computer workspace.", parameters: { type: "object", properties: { path: { type: "string" }, contents: { type: "string" }, append: { type: "boolean" } }, required: ["path", "contents"], additionalProperties: false } },
+  { type: "function", name: "computer_run_command", description: "Run a bounded command on the assigned MONOCER computer and return its output.", parameters: { type: "object", properties: { command: { type: "string" }, timeoutMs: { type: "number" } }, required: ["command"], additionalProperties: false } },
 ] as const;
 
 type BackgroundMessage = { role: "user" | "assistant" | "tool"; content: string; toolCallId?: string; toolCalls?: Array<{ id: string; type: "function"; function: { name: string; arguments: string } }> };
@@ -70,7 +71,7 @@ type BackgroundToolCall = { id: string; name: string; arguments: Record<string, 
 
 async function runComputerTool(agentId: string, call: BackgroundToolCall) {
   const routes: Record<string, { method: string; path: string }> = {
-    computer_navigate: { method: "POST", path: "/navigate" }, computer_read: { method: "GET", path: "/read" }, computer_snapshot: { method: "POST", path: "/snapshot" }, computer_click: { method: "POST", path: "/click" }, computer_type: { method: "POST", path: "/type" }, computer_key: { method: "POST", path: "/key" }, computer_scroll: { method: "POST", path: "/scroll" }, computer_screenshot: { method: "GET", path: "/screenshot" }, computer_list_files: { method: "POST", path: "/files/list" }, computer_read_file: { method: "POST", path: "/files/read" }, computer_write_file: { method: "POST", path: "/files/write" },
+    computer_navigate: { method: "POST", path: "/navigate" }, computer_read: { method: "GET", path: "/read" }, computer_snapshot: { method: "POST", path: "/snapshot" }, computer_click: { method: "POST", path: "/click" }, computer_type: { method: "POST", path: "/type" }, computer_key: { method: "POST", path: "/key" }, computer_scroll: { method: "POST", path: "/scroll" }, computer_screenshot: { method: "GET", path: "/screenshot" }, computer_list_files: { method: "POST", path: "/files/list" }, computer_read_file: { method: "POST", path: "/files/read" }, computer_write_file: { method: "POST", path: "/files/write" }, computer_run_command: { method: "POST", path: "/exec" },
   };
   const route = routes[call.name];
   if (!route) return { ok: false, error: `Unsupported background tool: ${call.name}` };
