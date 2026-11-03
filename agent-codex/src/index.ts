@@ -453,6 +453,10 @@ async function runAgent(
 Bun.serve({
   port: PORT,
   hostname: "127.0.0.1",
+  // Browser/computer tasks can spend longer than Bun's 10-second default between streamed
+  // events while Codex is deciding its next action. Keep the AG-UI connection alive for the
+  // duration of a normal autonomous task instead of turning a slow tool call into ECONNRESET.
+  idleTimeout: 255,
   async fetch(request) {
     const url = new URL(request.url);
     if (url.pathname === "/health") {

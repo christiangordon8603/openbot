@@ -34,20 +34,12 @@ run_full_start() {
   printf '%s\n' "$!" >"$lock/pid"
 }
 
-start_server_direct() {
-  (cd "$ROOT/server" && exec env PORT="${SERVER_PORT:-3001}" APP_DIST_DIR="$ROOT/app/dist" \
-    COMPUTER_SUPERVISOR_URL="${COMPUTER_SUPERVISOR_URL:-http://localhost:4500}" \
-    SUPERVISOR_TOKEN="${SUPERVISOR_TOKEN:-openbot-dev-supervisor-token}" \
-    COMPUTER_TOKEN="${COMPUTER_TOKEN:-openbot-dev-computer-token}" \
-    bun --env-file=../.env src/index.ts) >>"$LOGS/server.log" 2>&1 </dev/null &
-}
-
 while true; do
   # A server/container outage needs the full idempotent startup path. Host bridges and the
   # dashboard have cheaper direct restarts; rebuilding Docker for a crashed bridge made recovery
   # take minutes even though the computer stack was still healthy.
   if ! healthy "http://127.0.0.1:${SERVER_PORT:-3001}/api/capabilities"; then
-    start_server_direct
+    launchctl kickstart -k "gui/$(id -u)/com.monocer.openbot.server" 2>/dev/null || true
     sleep 3
     if ! healthy "http://127.0.0.1:${SERVER_PORT:-3001}/api/capabilities"; then
       run_full_start
@@ -57,8 +49,8 @@ while true; do
   # The Codex bridge and routine runner have their own launchd jobs. Keeping their process
   # ownership out of this long-lived Bash loop is important on macOS: a watchdog can remain
   # healthy while its fork table is unable to spawn another Bun child.
-  if ! healthy "http://127.0.0.1:${APP_PORT:-3001}/"; then
-    (cd "$ROOT/app" && exec bun run dev --port "${APP_PORT:-3001}" --strictPort) >>"$LOGS/app.log" 2>&1 </dev/null &
+  if ! healthy "http://127.0.0.1:${APP_PORT:-3010}/"; then
+    launchctl kickstart -k "gui/$(id -u)/com.monocer.openbot.app" 2>/dev/null || true
   fi
   sleep 20
 done

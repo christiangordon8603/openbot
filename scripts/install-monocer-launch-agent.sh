@@ -14,6 +14,10 @@ CODEX_LABEL="com.monocer.openbot.codex"
 CODEX_PLIST="$HOME/Library/LaunchAgents/$CODEX_LABEL.plist"
 ROUTINES_LABEL="com.monocer.openbot.routines"
 ROUTINES_PLIST="$HOME/Library/LaunchAgents/$ROUTINES_LABEL.plist"
+SERVER_LABEL="com.monocer.openbot.server"
+SERVER_PLIST="$HOME/Library/LaunchAgents/$SERVER_LABEL.plist"
+APP_LABEL="com.monocer.openbot.app"
+APP_PLIST="$HOME/Library/LaunchAgents/$APP_LABEL.plist"
 mkdir -p "$HOME/Library/LaunchAgents"
 
 cat > "$PLIST" <<EOF
@@ -106,9 +110,65 @@ cat > "$ROUTINES_PLIST" <<EOF
 </plist>
 EOF
 
+cat > "$SERVER_PLIST" <<EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>$SERVER_LABEL</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>$ROOT/scripts/run-monocer-server.sh</string>
+  </array>
+  <key>WorkingDirectory</key><string>$ROOT/server</string>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key><string>$HOME/.local/bin:$HOME/.bun/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+    <key>SERVER_PORT</key><string>3001</string>
+  </dict>
+  <key>RunAtLoad</key><true/>
+  <key>KeepAlive</key><true/>
+  <key>ProcessType</key><string>Interactive</string>
+  <key>ThrottleInterval</key><integer>10</integer>
+  <key>StandardOutPath</key><string>$ROOT/.logs/server.log</string>
+  <key>StandardErrorPath</key><string>$ROOT/.logs/server.log</string>
+</dict>
+</plist>
+EOF
+
+cat > "$APP_PLIST" <<EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>$APP_LABEL</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>$ROOT/scripts/run-monocer-app.sh</string>
+  </array>
+  <key>WorkingDirectory</key><string>$ROOT/app</string>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key><string>$HOME/.local/bin:$HOME/.bun/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+    <key>APP_PORT</key><string>3010</string>
+  </dict>
+  <key>RunAtLoad</key><true/>
+  <key>KeepAlive</key><true/>
+  <key>ProcessType</key><string>Interactive</string>
+  <key>ThrottleInterval</key><integer>10</integer>
+  <key>StandardOutPath</key><string>$ROOT/.logs/app.log</string>
+  <key>StandardErrorPath</key><string>$ROOT/.logs/app.log</string>
+</dict>
+</plist>
+EOF
+
 launchctl bootout "gui/$(id -u)/$LABEL" 2>/dev/null || true
 launchctl bootout "gui/$(id -u)/$CODEX_LABEL" 2>/dev/null || true
 launchctl bootout "gui/$(id -u)/$ROUTINES_LABEL" 2>/dev/null || true
+launchctl bootout "gui/$(id -u)/$SERVER_LABEL" 2>/dev/null || true
+launchctl bootout "gui/$(id -u)/$APP_LABEL" 2>/dev/null || true
 # The launch agent deliberately abandons its service children, but an older watchdog is itself a
 # parent process and would otherwise survive a reinstall beside the new one. Boot it out first so
 # launchd has released the job before the preserved parent is cleaned up.
@@ -127,4 +187,8 @@ launchctl bootstrap "gui/$(id -u)" "$CODEX_PLIST"
 launchctl enable "gui/$(id -u)/$CODEX_LABEL"
 launchctl bootstrap "gui/$(id -u)" "$ROUTINES_PLIST"
 launchctl enable "gui/$(id -u)/$ROUTINES_LABEL"
-echo "MONOCER auto-start enabled: $PLIST, $CODEX_PLIST, $ROUTINES_PLIST"
+launchctl bootstrap "gui/$(id -u)" "$SERVER_PLIST"
+launchctl enable "gui/$(id -u)/$SERVER_LABEL"
+launchctl bootstrap "gui/$(id -u)" "$APP_PLIST"
+launchctl enable "gui/$(id -u)/$APP_LABEL"
+echo "MONOCER auto-start enabled: $PLIST, $CODEX_PLIST, $ROUTINES_PLIST, $SERVER_PLIST, $APP_PLIST"
